@@ -24,9 +24,9 @@ async function main() {
   const fileContents = {};
   for (const f of srcFiles) {
     const stat = fs.statSync(f);
-    if (stat.size > 80_000) {
-      console.log(`  ⚠️  Skipping ${f} (${Math.round(stat.size / 1024)}KB — too large for context)`);
-      fileContents[f] = `// [FILE EXCLUDED FROM CONTEXT: ${f} (${Math.round(stat.size / 1024)}KB). Do NOT modify unless explicitly requested in bug description.]`;
+    if (stat.size > 350_000) {
+      console.log(`  ⚠️  Skipping ${f} (${Math.round(stat.size / 1024)}KB — file exceeds 350KB)`);
+      fileContents[f] = `// [FILE EXCLUDED FROM CONTEXT: ${f} (${Math.round(stat.size / 1024)}KB).]`;
     } else {
       fileContents[f] = fs.readFileSync(f, 'utf8');
     }

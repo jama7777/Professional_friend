@@ -464,17 +464,25 @@ function retargetMixamoClip(clip: THREE.AnimationClip): THREE.AnimationClip {
   return clip;
 }
 
+// Asset URL helper to ensure models load on any base URL (Vercel, GitHub Pages, local)
+const getAssetUrl = (relPath: string) => {
+  const base = import.meta.env.BASE_URL || '/';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  const cleanPath = relPath.startsWith('/') ? relPath.slice(1) : relPath;
+  return `${cleanBase}${cleanPath}`;
+};
+
 // Normal-chat animation playlist (Mixamo FBX paths)
 const CHAT_ANIMATIONS = [
-  '/models/animations/Standing Greeting.fbx',
-  '/models/animations/Talking.fbx',
-  '/models/animations/Happy.fbx',
-  '/models/animations/Clapping.fbx',
-  '/models/animations/Hip Hop Dancing.fbx',
+  getAssetUrl('models/animations/Standing Greeting.fbx'),
+  getAssetUrl('models/animations/Talking.fbx'),
+  getAssetUrl('models/animations/Happy.fbx'),
+  getAssetUrl('models/animations/Clapping.fbx'),
+  getAssetUrl('models/animations/Hip Hop Dancing.fbx'),
 ];
 
 // Interview mode: sitting animation
-const INTERVIEW_SIT_ANIM = '/models/animations/Sitting_interview_position@1.fbx';
+const INTERVIEW_SIT_ANIM = getAssetUrl('models/animations/Sitting_interview_position@1.fbx');
 
 // --- Avatar Viewer Component (Full 3D Scene + Office + Chair + Animations) ---
 const AvatarViewer = ({ isInterviewActive, chairRef, isUserTyping, status, playerRef, jawValueRef, a2fAnimRef }: {
@@ -1075,7 +1083,7 @@ const AvatarViewer = ({ isInterviewActive, chairRef, isUserTyping, status, playe
     jawBoneRef.current = null;
     lipSyncMeshesRef.current = [];
     const gltfLoader = new GLTFLoader();
-    gltfLoader.load('/models/aura/aura.glb', (gltf) => {
+    gltfLoader.load(getAssetUrl('models/aura/aura.glb'), (gltf) => {
       console.log('✅ aura.glb loaded');
       const object = gltf.scene;
       avatarRef.current = object;
