@@ -32,10 +32,11 @@ import {
 import {
   InterviewSession,
   InterviewEvaluation,
-  getAllInterviewSessions,
+  getUserInterviewSessions,
   deleteInterviewSession,
   clearAllInterviewSessions
 } from '../services/db';
+import { UserProfile } from '../services/auth';
 
 interface InterviewDashboardProps {
   session: InterviewSession | null;
@@ -43,6 +44,7 @@ interface InterviewDashboardProps {
   onClose: () => void;
   onSelectSession?: (session: InterviewSession) => void;
   isEvaluating?: boolean;
+  currentUser?: UserProfile;
 }
 
 type TabType = 'overview' | 'questions' | 'strengths' | 'mistakes' | 'improvements' | 'history';
@@ -52,7 +54,8 @@ export const InterviewDashboard: React.FC<InterviewDashboardProps> = ({
   isOpen,
   onClose,
   onSelectSession,
-  isEvaluating = false
+  isEvaluating = false,
+  currentUser
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [historySessions, setHistorySessions] = useState<InterviewSession[]>([]);
@@ -70,11 +73,11 @@ export const InterviewDashboard: React.FC<InterviewDashboardProps> = ({
     if (isOpen) {
       loadHistory();
     }
-  }, [isOpen, selectedSession]);
+  }, [isOpen, selectedSession, currentUser]);
 
   const loadHistory = async () => {
     try {
-      const all = await getAllInterviewSessions();
+      const all = currentUser?.id ? await getUserInterviewSessions(currentUser.id) : await getUserInterviewSessions('user_jamadagni');
       setHistorySessions(all);
       if (!selectedSession && all.length > 0) {
         setSelectedSession(all[0]);

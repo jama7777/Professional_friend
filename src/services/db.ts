@@ -62,6 +62,8 @@ export interface InterviewTranscriptMessage {
 
 export interface InterviewSession {
   id: string;
+  userId?: string;
+  userName?: string;
   company: string;
   role: string;
   startedAt: number;
@@ -75,7 +77,7 @@ export interface InterviewSession {
 }
 
 const DB_NAME = 'ProfessionalFriendDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'interviews';
 
 function openDB(): Promise<IDBDatabase> {
@@ -94,6 +96,7 @@ function openDB(): Promise<IDBDatabase> {
         store.createIndex('startedAt', 'startedAt', { unique: false });
         store.createIndex('company', 'company', { unique: false });
         store.createIndex('status', 'status', { unique: false });
+        store.createIndex('userId', 'userId', { unique: false });
       }
     };
 
@@ -191,6 +194,14 @@ export async function getAllInterviewSessions(): Promise<InterviewSession[]> {
       return [];
     }
   }
+}
+
+/**
+ * Retrieves interview sessions belonging to a specific user ID
+ */
+export async function getUserInterviewSessions(userId: string): Promise<InterviewSession[]> {
+  const all = await getAllInterviewSessions();
+  return all.filter(s => s.userId === userId || (!s.userId && userId === 'user_jamadagni'));
 }
 
 /**
