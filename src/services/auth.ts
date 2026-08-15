@@ -19,46 +19,18 @@ const STORAGE_USERS_KEY = 'pf_user_profiles';
 const STORAGE_ACTIVE_USER_KEY = 'pf_active_user_id';
 const STORAGE_SESSION_AUTH_KEY = 'pf_session_authenticated';
 
-const DEFAULT_PROFILES: UserProfile[] = [
-  {
-    id: 'user_jamadagni',
-    name: 'Jamadagni',
-    email: 'jamadagni@professionalfriend.ai',
-    title: 'AI Researcher & Founder',
-    targetCompanies: ['OpenAI', 'Google', 'Meta', 'Anthropic'],
-    avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=Jamadagni&backgroundColor=0284c7',
-    role: 'candidate',
-    pin: '7777',
-    createdAt: Date.now() - 86400000 * 7
-  },
-  {
-    id: 'user_alex',
-    name: 'Alex Chen',
-    email: 'alex.chen@tech.io',
-    title: 'Senior Distributed Systems SWE',
-    targetCompanies: ['Meta', 'Netflix', 'Amazon', 'Apple'],
-    avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=AlexChen&backgroundColor=7c3aed',
-    role: 'candidate',
-    pin: '1234',
-    createdAt: Date.now() - 86400000 * 3
-  }
-];
-
 /**
- * Initializes profiles from storage or pre-populates default demo profiles
+ * Initializes profiles from local storage
  */
 export function getAllProfiles(): UserProfile[] {
   try {
     const raw = localStorage.getItem(STORAGE_USERS_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(DEFAULT_PROFILES));
-      return DEFAULT_PROFILES;
-    }
+    if (!raw) return [];
     const profiles = JSON.parse(raw);
-    return Array.isArray(profiles) && profiles.length > 0 ? profiles : DEFAULT_PROFILES;
+    return Array.isArray(profiles) ? profiles : [];
   } catch (e) {
     console.error('[Auth] Failed to load profiles:', e);
-    return DEFAULT_PROFILES;
+    return [];
   }
 }
 
@@ -191,7 +163,7 @@ export async function registerUser(
  * Updates properties of the active user profile
  */
 export async function updateUserProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
-  const current = getCurrentUser() || DEFAULT_PROFILES[0];
+  const current = getCurrentUser() || createGuestUser();
   const updated: UserProfile = {
     ...current,
     ...updates,

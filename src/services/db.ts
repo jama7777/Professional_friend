@@ -201,7 +201,7 @@ export async function getAllInterviewSessions(): Promise<InterviewSession[]> {
  */
 export async function getUserInterviewSessions(userId: string): Promise<InterviewSession[]> {
   const all = await getAllInterviewSessions();
-  return all.filter(s => s.userId === userId || (!s.userId && userId === 'user_jamadagni'));
+  return all.filter(s => s.userId === userId);
 }
 
 /**
