@@ -6,15 +6,15 @@ on:
   issue_comment:
     types: [created]
 
-# Prevent duplicate parallel runs when an issue is created with multiple labels
+# Prevent duplicate parallel runs on the same issue
 concurrency:
   group: auto-fix-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 permissions:
   contents: write
-  pull-requests: write
   issues: write
+  pull-requests: write
 
 jobs:
   auto-fix:
@@ -32,6 +32,7 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: ⚙️ Set up Node.js 20
@@ -57,92 +58,54 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: node scripts/auto-fix-agent.js
 
-      - name: 🚀 Commit, Push & Open Single Pull Request
+      - name: 🚀 Commit & Push Verified Fix Directly to Main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUM: ${{ github.event.issue.number }}
         run: |
           if [ ! -f auto-fix-summary.json ]; then
-            echo "⚠️  No auto-fix-summary.json produced — skipping PR creation."
+            echo "⚠️  No auto-fix-summary.json produced — skipping push."
             exit 0
           fi
-
-          # Deterministic single branch per issue (prevents multiple branch pollution)
-          BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git checkout -B "$BRANCH_NAME"
-          git add src/ scripts/
 
           DIAGNOSIS=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).diagnosis)")
           COMMIT_MSG=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).commitMessage)")
 
           # Skip if no code changes
-          if git diff --cached --quiet; then
+          if git diff --quiet src/ scripts/; then
             echo "ℹ️  No file changes — leaving diagnostic comment on the issue."
             gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Analysis Complete**
 
-          The agent ran successfully but determined **no code changes are needed** for this issue.
+          The agent analyzed this issue and verified that **no code changes are needed** (or the codebase already satisfies this request).
 
           **Diagnosis**:
           > ${DIAGNOSIS}"
             exit 0
           fi
 
-          git commit -m "$COMMIT_MSG"
-          git push -f origin "$BRANCH_NAME"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Check if PR already exists for this branch
-          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state open --json url --jq '.[0].url')
+          # Stage verified fixes directly on main
+          git add src/ scripts/
+          git commit -m "$COMMIT_MSG (fixes #${ISSUE_NUM})"
 
-          if [ -n "$EXISTING_PR" ]; then
-            echo "✅ Existing PR updated: $EXISTING_PR"
-            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Updated!**
+          # Pull rebase in case of concurrent commits, then push directly to main
+          git pull --rebase origin main
+          git push origin main
 
-          I pushed an updated fix to the existing PR:
-          👉 **Pull Request**: $EXISTING_PR
+          COMMIT_SHA=$(git rev-parse --short HEAD)
 
-          **Updated Diagnosis**:
+          # Comment and close the issue
+          gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Applied Directly to \`main\`!**
+
+          A verified fix was automatically tested and pushed directly to the **\`main\`** branch.
+
+          - **Commit**: \`${COMMIT_SHA}\` — \`${COMMIT_MSG}\`
+          - **Verification**: \`npm run lint\` & \`npm run build\` passed (0 errors)
+          - **Deployment**: Vercel is now deploying this fix to production automatically.
+
+          **Root Cause Diagnosis**:
           > ${DIAGNOSIS}"
-          else
-            PR_URL=$(gh pr create \
-              --title "🤖 Auto-Fix for Issue #${ISSUE_NUM}: ${COMMIT_MSG}" \
-              --body "## 🤖 Autonomous AI Fix Report
 
-            Closes #${ISSUE_NUM}
-
-            ### 🔍 Root Cause Diagnosis
-            ${DIAGNOSIS}
-
-            ### 🧪 Automated Verification
-            - \`npm run lint\` passed (0 TypeScript errors)
-            - \`npm run build\` passed (Vite bundle compiled successfully)
-
-            ---
-            *Generated automatically by the Autonomous AI Bug-Fix Agent.*" \
-              --base main \
-              --head "$BRANCH_NAME" 2>&1) || true
-
-            if echo "$PR_URL" | grep -q "https://github.com"; then
-              echo "✅ Pull Request created: $PR_URL"
-              gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Ready for Review!**
-
-            I diagnosed the bug and generated a verified fix that passed all build checks.
-
-            👉 **Pull Request**: $PR_URL
-
-            **Root Cause**:
-            > ${DIAGNOSIS}"
-            else
-              MANUAL_URL="https://github.com/jama7777/Professional_friend/pull/new/${BRANCH_NAME}"
-              gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Generated!**
-
-            The fix was committed and pushed to branch \`${BRANCH_NAME}\`.
-
-            👉 **Open the PR here**: $MANUAL_URL
-
-            **Root Cause**:
-            > ${DIAGNOSIS}"
-            fi
-          fi
+          gh issue close "$ISSUE_NUM" --reason "completed"
