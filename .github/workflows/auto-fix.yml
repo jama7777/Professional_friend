@@ -82,17 +82,23 @@ jobs:
 
           DIAGNOSIS=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).diagnosis)")
           COMMIT_MSG=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).commitMessage)")
-          PR_DESC=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).prDescription)")
 
-          # Only create a commit + PR if there are actual staged changes
+          # Skip if nothing changed
           if git diff --cached --quiet; then
-            echo "ℹ️  No file changes detected after applying fix. Skipping PR."
+            echo "ℹ️  No file changes — leaving a diagnostic comment on the issue."
+            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Analysis Complete**
+
+          The agent ran successfully but determined **no code changes are needed** for this issue.
+
+          **Diagnosis**:
+          > ${DIAGNOSIS}"
             exit 0
           fi
 
           git commit -m "$COMMIT_MSG"
           git push origin "$BRANCH_NAME"
 
+          # Try to open a PR; if the repo setting blocks it, fall back to a comment with a manual link
           PR_URL=$(gh pr create \
             --title "🤖 Auto-Fix for Issue #${ISSUE_NUM}: ${COMMIT_MSG}" \
             --body "## 🤖 Autonomous AI Fix Report
@@ -109,15 +115,31 @@ jobs:
           ---
           *Generated automatically by the Autonomous Gemini Bug-Fix Agent.*" \
             --base main \
-            --head "$BRANCH_NAME")
+            --head "$BRANCH_NAME" 2>&1) || true
 
-          echo "✅ Pull Request created: $PR_URL"
+          if echo "$PR_URL" | grep -q "https://github.com"; then
+            echo "✅ Pull Request created: $PR_URL"
+            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Ready for Review!**
 
-          gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Ready for Review!**
-
-          I analyzed the bug and generated a verified fix that passed all build tests.
+          I diagnosed the bug and generated a verified fix that passed all build checks.
 
           👉 **Pull Request**: $PR_URL
 
           **Root Cause**:
           > ${DIAGNOSIS}"
+          else
+            # PR creation blocked by repo permissions — post a manual merge link instead
+            MANUAL_URL="https://github.com/jama7777/Professional_friend/pull/new/${BRANCH_NAME}"
+            echo "⚠️  Automatic PR creation blocked. Posting manual link."
+            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Generated!**
+
+          The fix was committed and pushed, but automatic PR creation is blocked by repository settings.
+
+          👉 **Open the PR manually here**: $MANUAL_URL
+
+          **What was fixed**:
+          > ${DIAGNOSIS}
+
+          ---
+          *To enable fully automatic PRs: go to **Settings → Actions → General → Workflow permissions** and check ✅ **Allow GitHub Actions to create and approve pull requests**.*"
+          fi
