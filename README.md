@@ -56,8 +56,8 @@
 ### 2. Installation
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/vision-sync.git
-cd vision-sync
+git clone https://github.com/jama7777/Professional_friend.git
+cd Professional_friend
 
 # Install dependencies
 npm install
@@ -73,21 +73,13 @@ Fill in your API keys in `.env`:
 GEMINI_API_KEY="your_gemini_api_key"
 MISTRAL_API_KEY="your_mistral_api_key"
 DEEPGRAM_API_KEY="your_deepgram_api_key"
-
-# Frontend Vite copies
-VITE_GEMINI_API_KEY="your_gemini_api_key"
-VITE_MISTRAL_API_KEY="your_mistral_api_key"
-VITE_DEEPGRAM_API_KEY="your_deepgram_api_key"
+CARTESIA_API_KEY="your_cartesia_api_key"
 ```
 
 ### 4. Run Locally
-Start both the Express proxy relay and Vite frontend dev server:
+Start the standalone Vite application:
 
 ```bash
-# Terminal 1: Start Backend Relay Server (Port 3001)
-npm run dev:server
-
-# Terminal 2: Start Frontend Application (Port 3000)
 npm run dev
 ```
 
@@ -98,13 +90,12 @@ Open [http://localhost:3000/](http://localhost:3000/) in your browser.
 ## 📁 Repository Structure
 
 ```text
-vision-sync/
-├── .env.example              # Environment variables template
+Professional_friend/
+├── .env.example              # Single-entry environment variables template
 ├── .gitignore                # Optimized Git ignore file
 ├── package.json              # Project scripts & dependencies
 ├── tsconfig.json             # TypeScript configuration
-├── vite.config.ts            # Vite proxy & bundler settings
-├── server.ts                 # Express proxy & Mistral relay server
+├── vite.config.ts            # Vite standalone proxy & bundler settings
 ├── index.html                # App entry HTML
 ├── src/
 │   ├── main.tsx              # React mounting with ErrorBoundary

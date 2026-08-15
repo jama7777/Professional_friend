@@ -57,13 +57,9 @@ These capabilities run entirely on **native Web Standards and Node.js built-ins*
 
 ### Starting the Application:
 ```bash
-# 1. Start Backend Express Relay (Port 3001)
-npm run dev:server
-
-# 2. Start Frontend Vite Application (Port 3000)
+# Start Frontend Vite Application with Built-in Cloud Proxies (Port 3000)
 npm run dev
 ```
 
 ### Accessing the Platform:
-- **Frontend URL**: `http://localhost:3000/`
-- **Backend Health Check**: `http://localhost:3001/`
+- **Application URL**: `http://localhost:3000/` (or `http://192.168.0.7:3000/`)

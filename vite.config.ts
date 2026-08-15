@@ -29,16 +29,6 @@ export default defineConfig(({ mode }) => {
       // Do not modifyâ€”file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
-        // NIM + Tavily agent loop — forwards to local Express server
-        '/api/nim-agent': {
-          target: 'http://localhost:3001',
-          changeOrigin: true,
-        },
-        // Mistral relay — forwards to local Express server which calls Mistral server-side
-        '/api/mistral-chat': {
-          target: 'http://localhost:3001',
-          changeOrigin: true,
-        },
         '/api/groq': {
           target: 'https://api.groq.com',
           changeOrigin: true,

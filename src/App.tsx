@@ -1689,11 +1689,14 @@ Format: numbered list only, no extra commentary. Include the likely source in br
     const abortTimer = setTimeout(() => abortCtrl.abort(), 30000); // 30s timeout
 
     try {
-      console.log('[Mistral] Fetching questions via server relay...');
-      const res = await fetch('/api/mistral-chat', {
+      console.log('[Mistral] Fetching real interview questions...');
+      const res = await fetch('/api/mistral/v1/chat/completions', {
         method: 'POST',
         signal: abortCtrl.signal,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${mistralKey}`
+        },
         body: JSON.stringify({
           model: 'mistral-large-latest',
           messages: [{ role: 'user', content: searchPrompt }],
@@ -1739,144 +1742,7 @@ Format: numbered list only, no extra commentary. Include the likely source in br
       fetchInterviewQuestions(interviewCompany, userMsg.trim()); // runs in background
     }
 
-    // ── PATH B: NIM + Tavily (Primary) ────────────────────────────────────────
-    // Calls the local Express /api/nim-agent endpoint which:
-    //   1. Searches Tavily for real-time web context
-    //   2. Sends NIM (meta/llama-3.3-70b-instruct) a prompt with that context
-    //   3. Streams the response back as SSE
-    // Falls through to Gemini if the endpoint is unavailable or returns an error.
-    try {
-      const nimSystemPrompt = isInterviewActive
-        ? (() => {
-          const role = interviewRole || 'the role the candidate mentioned';
-          const qBank = fetchedQuestions
-            ? `Real questions for ${interviewCompany} ${role}: ${fetchedQuestions.slice(0, 300)}`
-            : '';
-          return `You are a Senior Technical Interviewer at ${interviewCompany} for the "${role}" role.
-
-⚠️ STRICT OUTPUT RULES — violating these fails the interview:
-- Reply in MAX 3 SHORT sentences per turn. No exceptions.
-- NO markdown, NO bullet points, NO tables, NO headers, NO numbered lists.
-- ONE action per turn: either give feedback OR ask a question — never both in detail.
-- Do NOT volunteer extra information, explanations, or examples unless directly asked.
-- Sound like a real human interviewer speaking, not a document.
-- Candidate emotion: ${consoleState.emotion}. Briefly acknowledge if visibly nervous or confident.
-${qBank ? `\nDraw from these real questions: ${qBank}` : ''}`;
-        })()
-        : `You are Professional Friend AI. Be extremely concise — 2-3 sentences max. No markdown. Cite sources briefly when relevant. Emotion context: ${consoleState.emotion}.`;
-
-      // Only keep last 2 turns (4 msgs), trimmed to 200 chars each to stay lean
-      const nimHistory = chatMessages.slice(-4).map(m => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content.slice(0, 200),
-      }));
-
-      const nimRes = await fetch('/api/nim-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userMsg, history: nimHistory, systemPrompt: nimSystemPrompt }),
-      });
-
-      if (!nimRes.ok) throw new Error(`nim-agent ${nimRes.status}`);
-      if (!nimRes.body) throw new Error('nim-agent: no body');
-
-      // Placeholder assistant message for streaming
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-      const nimReader = nimRes.body.getReader();
-      const nimDecoder = new TextDecoder();
-      let nimBuffer = '';
-      let nimFullText = '';
-      let nimSentBuf = '';
-      let nimFirst = true;
-      let nimSources: Array<{ title: string; url: string }> = [];
-      let nimQueries: string[] = [];
-      let nimError = false;
-
-      const flushNimSentence = (s: string) => {
-        const trimmed = s.trim();
-        if (!trimmed) return;
-        if (nimFirst) { speakQueueRef.current = Promise.resolve(); nimFirst = false; }
-        speakQueued(trimmed);
-      };
-
-      while (true) {
-        const { done, value } = await nimReader.read();
-        if (done) break;
-
-        nimBuffer += nimDecoder.decode(value, { stream: true });
-        const lines = nimBuffer.split('\n');
-        nimBuffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          try {
-            const evt = JSON.parse(trimmed.slice(6)) as {
-              type: string; text?: string;
-              sources?: Array<{ title: string; url: string }>;
-              queries?: string[]; message?: string;
-            };
-
-            if (evt.type === 'token' && evt.text) {
-              nimFullText += evt.text;
-              nimSentBuf += evt.text;
-
-              const match = nimSentBuf.search(/[.!?]\s/);
-              if (match !== -1) {
-                flushNimSentence(nimSentBuf.slice(0, match + 1));
-                nimSentBuf = nimSentBuf.slice(match + 2);
-              }
-
-              setChatMessages((prev: Message[]) => {
-                const msgs = [...prev];
-                msgs[msgs.length - 1] = {
-                  ...msgs[msgs.length - 1],
-                  content: nimFullText,
-                };
-                return msgs;
-              });
-            } else if (evt.type === 'sources') {
-              nimSources = evt.sources ?? [];
-              nimQueries = evt.queries ?? [];
-              if (nimSources.length > 0 || nimQueries.length > 0) {
-                setChatMessages((prev: Message[]) => {
-                  const msgs = [...prev];
-                  msgs[msgs.length - 1] = {
-                    ...msgs[msgs.length - 1],
-                    groundingSources: nimSources.length > 0 ? nimSources : undefined,
-                    searchQueries: nimQueries.length > 0 ? nimQueries : undefined,
-                  };
-                  return msgs;
-                });
-              }
-            } else if (evt.type === 'error') {
-              console.warn('[NIM-Agent] Server error:', evt.message);
-              nimError = true;
-            }
-          } catch {
-            // skip malformed SSE line
-          }
-        }
-      }
-
-      flushNimSentence(nimSentBuf);
-      console.log(`[NIM-Agent] Done. ${nimSources.length} sources, error=${nimError}`);
-
-      if (nimFullText && !nimError) {
-        // Success — NIM responded, stop here
-        setIsChatLoading(false);
-        return;
-      }
-
-      // If NIM returned empty text or an error, remove the empty placeholder and fall through
-      setChatMessages(prev => prev.slice(0, -1));
-      throw new Error('NIM returned empty response — falling through to Gemini');
-
-    } catch (nimErr: any) {
-      console.warn('[NIM-Agent] Falling through to Gemini:', nimErr.message ?? nimErr);
-      // Continue to Gemini fallback below
-    }
+    // ── Primary: Gemini 2.5 Flash with Google Search Grounding ──────────────
 
     const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
@@ -2070,14 +1936,17 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
       const abortCtrl2 = new AbortController();
       const abortTimer2 = setTimeout(() => abortCtrl2.abort(), 30000); // 30s timeout
 
-      console.log('[Mistral] Sending chat via server relay...');
+      console.log('[Mistral] Sending chat request...');
       // Use system + user split to avoid single-message bloat
       let response: Response;
       try {
-        response = await fetch('/api/mistral-chat', {
+        response = await fetch('/api/mistral/v1/chat/completions', {
           method: 'POST',
           signal: abortCtrl2.signal,
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${mistralKey}`
+          },
           body: JSON.stringify({
             model: 'mistral-large-latest',
             stream: false,
