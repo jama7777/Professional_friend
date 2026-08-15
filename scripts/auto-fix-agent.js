@@ -1,5 +1,5 @@
 // Autonomous Auto-Fix Agent for Professional Friend
-// Powered by Google Gemini 2.5 Flash inside GitHub Actions
+// Powered by Google Gemini 2.0 Flash inside GitHub Actions
 
 import fs from 'fs';
 import path from 'path';
@@ -31,7 +31,6 @@ async function main() {
 
   const fileContents = {};
   for (const f of srcFiles) {
-    // Skip very large files (>80KB) to stay within Gemini's context
     const stat = fs.statSync(f);
     if (stat.size > 80_000) {
       console.log(`  ⚠️  Skipping ${f} (${Math.round(stat.size / 1024)}KB — too large for context)`);
@@ -45,25 +44,28 @@ async function main() {
   const systemPrompt = `You are a Principal Staff Software Engineer & Autonomous Code Repair Agent.
 Your job: diagnose and fix the reported bug in this React/TypeScript/Vite repository.
 
-Tech stack: React 19, TypeScript 5, Vite 6, Tailwind CSS 4, Three.js, @google/genai, IndexedDB.
+Tech stack & dependencies:
+- React 19, TypeScript 5, Vite 6, Tailwind CSS 4
+- "motion": "^12.x" is installed. Correct import is: import { motion, AnimatePresence } from 'motion/react'; DO NOT change this to 'framer-motion'.
+- Lucide React icons, Three.js, @google/genai, IndexedDB.
 
 Source files available:
 ${Object.keys(fileContents).map(f => `  - ${f}`).join('\n')}
 
 RULES:
 1. Analyze the issue title, error message, stack trace, and user description carefully.
-2. Identify the EXACT root cause — reference specific file paths and line logic.
-3. Return ONLY a valid JSON object matching the schema below. No markdown, no explanation outside the JSON.
-4. Only include files you actually changed in fixedFiles. Do NOT include unchanged files.
+2. If this issue is just a test, question, or inquiry where no bug exists in code, return "fixedFiles": [] and explain in "diagnosis".
+3. If there is a real bug, identify the EXACT root cause and provide COMPLETE, FULL file replacement content with all imports, functions, and closing tags intact. Do NOT truncate.
+4. Only include files you actually changed in fixedFiles.
 5. The fixed code MUST pass: tsc --noEmit AND vite build with 0 errors.
 
-RESPONSE SCHEMA (output ONLY this, nothing else):
+RESPONSE SCHEMA (output ONLY valid JSON matching this schema, no markdown wrapping):
 {
   "diagnosis": "2-3 sentence root cause explanation referencing specific code.",
   "fixedFiles": [
     {
       "filePath": "src/components/Example.tsx",
-      "content": "/* complete file content */"
+      "content": "/* complete full file content */"
     }
   ],
   "commitMessage": "fix: concise description of what was fixed",
@@ -80,23 +82,25 @@ ${Object.entries(fileContents)
   .map(([f, code]) => `=== ${f} ===\n${code}\n=== END ${f} ===`)
   .join('\n\n')}
 
-Generate the JSON fix now.`;
+Analyze the issue and generate the JSON fix now.`;
 
   // ── 3. Agentic retry loop ─────────────────────────────────────────────────
   let lastBuildError = '';
   const maxAttempts  = 3;
+  const modelsToTry  = ['gemini-2.0-flash', 'gemini-1.5-flash'];
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(`\n🧠 Gemini analysis — Attempt ${attempt}/${maxAttempts}...`);
+    const currentModel = modelsToTry[(attempt - 1) % modelsToTry.length];
+    console.log(`\n🧠 Gemini analysis (${currentModel}) — Attempt ${attempt}/${maxAttempts}...`);
 
     const finalPrompt = lastBuildError
-      ? `${userPrompt}\n\n⚠️ PREVIOUS ATTEMPT BUILD ERROR:\n${lastBuildError}\nFix the code to eliminate this error.`
+      ? `${userPrompt}\n\n⚠️ PREVIOUS ATTEMPT BUILD ERROR:\n${lastBuildError}\nFix the code to eliminate this error and ensure valid TypeScript and complete JSX tags.`
       : userPrompt;
 
     let responseText = '';
     try {
       const response = await client.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: currentModel,
         contents: [
           {
             role: 'user',
@@ -105,15 +109,16 @@ Generate the JSON fix now.`;
         ],
         config: {
           responseMimeType: 'application/json',
-          temperature: 0.05,
+          temperature: 0.1,
         },
       });
 
-      // ⚠️  FIX: response.text is a METHOD, not a property
       responseText = typeof response.text === 'function' ? response.text() : (response.text ?? '');
     } catch (apiErr) {
       console.error(`❌ Gemini API call failed on attempt ${attempt}:`, apiErr.message);
       lastBuildError = `Gemini API error: ${apiErr.message}`;
+      // Sleep before retry to handle rate limits
+      await new Promise(r => setTimeout(r, 4000));
       continue;
     }
 
@@ -127,9 +132,8 @@ Generate the JSON fix now.`;
     }
 
     if (fixData.fixedFiles.length === 0) {
-      console.log('ℹ️  Gemini found no code changes necessary for this issue.');
+      console.log('ℹ️  Gemini analyzed the issue and determined no code changes are required.');
       console.log(`   Diagnosis: ${fixData.diagnosis}`);
-      // Write a summary so the workflow can still comment on the issue
       fs.writeFileSync('auto-fix-summary.json', JSON.stringify({
         diagnosis: fixData.diagnosis || 'No code changes required.',
         commitMessage: `chore: analysis of issue #${issueNumber} — no code changes needed`,
@@ -185,11 +189,23 @@ Generate the JSON fix now.`;
       console.warn(`❌ Verification failed on attempt ${attempt}:`);
       console.warn(errOut.slice(0, 800));
       lastBuildError = errOut.slice(0, 1200);
+
+      // Revert dirty files so next attempt starts from a clean repo state
+      try {
+        execSync('git checkout -- .', { stdio: 'ignore' });
+      } catch {}
     }
   }
 
-  console.error(`❌ Agent exceeded ${maxAttempts} attempts without a passing build.`);
-  process.exit(1);
+  // If we reach here, record diagnosis without failing whole CI
+  console.warn(`⚠️ Agent finished without a verified build. Leaving diagnostic comment.`);
+  fs.writeFileSync('auto-fix-summary.json', JSON.stringify({
+    diagnosis: `The AI analyzed the issue but the proposed fix failed automated verification (${lastBuildError.slice(0, 250)}...).`,
+    commitMessage: `chore: unverified auto-fix attempt for issue #${issueNumber}`,
+    prDescription: `Could not verify automated fix.`,
+    fixedFilesCount: 0,
+    noChanges: true,
+  }, null, 2));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -211,7 +227,6 @@ function getSourceFiles(dir) {
 function cleanAndParseJSON(raw) {
   if (!raw || typeof raw !== 'string') return null;
   try {
-    // Strip any accidental markdown fences
     const cleaned = raw
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
@@ -219,7 +234,6 @@ function cleanAndParseJSON(raw) {
       .trim();
     return JSON.parse(cleaned);
   } catch {
-    // Try to extract the first JSON object
     const match = raw.match(/\{[\s\S]*\}/);
     if (match) {
       try { return JSON.parse(match[0]); } catch {}
