@@ -9,6 +9,7 @@ export interface UserProfile {
   targetCompanies: string[]; // e.g. ["Meta", "Google", "OpenAI"]
   avatarUrl?: string;
   role: 'candidate' | 'recruiter' | 'investor' | 'guest';
+  pin?: string; // Optional 4-digit PIN / password for privacy protection
   createdAt: number;
   totalInterviews?: number;
   avgScore?: number;
@@ -16,6 +17,7 @@ export interface UserProfile {
 
 const STORAGE_USERS_KEY = 'pf_user_profiles';
 const STORAGE_ACTIVE_USER_KEY = 'pf_active_user_id';
+const STORAGE_SESSION_AUTH_KEY = 'pf_session_authenticated';
 
 const DEFAULT_PROFILES: UserProfile[] = [
   {
@@ -26,6 +28,7 @@ const DEFAULT_PROFILES: UserProfile[] = [
     targetCompanies: ['OpenAI', 'Google', 'Meta', 'Anthropic'],
     avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=Jamadagni&backgroundColor=0284c7',
     role: 'candidate',
+    pin: '7777',
     createdAt: Date.now() - 86400000 * 7
   },
   {
@@ -36,6 +39,7 @@ const DEFAULT_PROFILES: UserProfile[] = [
     targetCompanies: ['Meta', 'Netflix', 'Amazon', 'Apple'],
     avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=AlexChen&backgroundColor=7c3aed',
     role: 'candidate',
+    pin: '1234',
     createdAt: Date.now() - 86400000 * 3
   }
 ];
@@ -59,9 +63,35 @@ export function getAllProfiles(): UserProfile[] {
 }
 
 /**
+ * Check if the user is authenticated in the current browser session
+ */
+export function isSessionAuthenticated(): boolean {
+  try {
+    return sessionStorage.getItem(STORAGE_SESSION_AUTH_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sets session authenticated state
+ */
+export function setSessionAuthenticated(isAuth: boolean): void {
+  try {
+    if (isAuth) {
+      sessionStorage.setItem(STORAGE_SESSION_AUTH_KEY, 'true');
+    } else {
+      sessionStorage.removeItem(STORAGE_SESSION_AUTH_KEY);
+    }
+  } catch (e) {
+    console.error('[Auth] Failed to set session auth:', e);
+  }
+}
+
+/**
  * Retrieves the currently active user profile
  */
-export function getCurrentUser(): UserProfile {
+export function getCurrentUser(): UserProfile | null {
   const profiles = getAllProfiles();
   const activeId = localStorage.getItem(STORAGE_ACTIVE_USER_KEY);
   
@@ -70,18 +100,16 @@ export function getCurrentUser(): UserProfile {
     if (found) return found;
   }
   
-  // Default to first profile if none explicitly set
-  const defaultUser = profiles[0] || DEFAULT_PROFILES[0];
-  setCurrentUser(defaultUser);
-  return defaultUser;
+  return null;
 }
 
 /**
- * Sets the active user profile
+ * Sets the active user profile and marks session as authenticated
  */
 export function setCurrentUser(user: UserProfile): void {
   try {
     localStorage.setItem(STORAGE_ACTIVE_USER_KEY, user.id);
+    setSessionAuthenticated(true);
     const profiles = getAllProfiles();
     const index = profiles.findIndex(p => p.id === user.id);
     if (index >= 0) {
@@ -96,6 +124,40 @@ export function setCurrentUser(user: UserProfile): void {
 }
 
 /**
+ * Logs out the active user and locks the session
+ */
+export function logoutUser(): void {
+  try {
+    sessionStorage.removeItem(STORAGE_SESSION_AUTH_KEY);
+    localStorage.removeItem(STORAGE_ACTIVE_USER_KEY);
+  } catch (e) {
+    console.error('[Auth] Failed to logout:', e);
+  }
+}
+
+/**
+ * Verifies PIN and logs in
+ */
+export async function authenticateWithPin(profileId: string, enteredPin: string): Promise<boolean> {
+  const profiles = getAllProfiles();
+  const found = profiles.find(p => p.id === profileId);
+  if (!found) return false;
+  
+  // If no PIN configured, allow direct login
+  if (!found.pin) {
+    setCurrentUser(found);
+    return true;
+  }
+
+  if (found.pin === enteredPin.trim()) {
+    setCurrentUser(found);
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Creates and registers a new candidate profile
  */
 export async function registerUser(
@@ -103,7 +165,8 @@ export async function registerUser(
   email: string,
   title: string = 'Software Engineer',
   targetCompanies: string[] = ['Meta', 'Google'],
-  role: 'candidate' | 'recruiter' | 'investor' | 'guest' = 'candidate'
+  role: 'candidate' | 'recruiter' | 'investor' | 'guest' = 'candidate',
+  pin?: string
 ): Promise<UserProfile> {
   const newUser: UserProfile = {
     id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -113,6 +176,7 @@ export async function registerUser(
     targetCompanies: targetCompanies.length > 0 ? targetCompanies : ['Meta', 'Google'],
     avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name.trim())}&backgroundColor=06b6d4`,
     role,
+    pin: pin?.trim() || undefined,
     createdAt: Date.now()
   };
 
@@ -124,23 +188,10 @@ export async function registerUser(
 }
 
 /**
- * Logs in by existing email or switches profile
- */
-export async function loginUser(email: string): Promise<UserProfile | null> {
-  const profiles = getAllProfiles();
-  const found = profiles.find(p => p.email.toLowerCase() === email.trim().toLowerCase());
-  if (found) {
-    setCurrentUser(found);
-    return found;
-  }
-  return null;
-}
-
-/**
  * Updates properties of the active user profile
  */
 export async function updateUserProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
-  const current = getCurrentUser();
+  const current = getCurrentUser() || DEFAULT_PROFILES[0];
   const updated: UserProfile = {
     ...current,
     ...updates,

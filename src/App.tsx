@@ -22,7 +22,7 @@ import {
 import { evaluateInterviewSession } from './services/evaluator';
 import { InterviewDashboard } from './components/InterviewDashboard';
 import { AuthModal } from './components/AuthModal';
-import { getCurrentUser, UserProfile } from './services/auth';
+import { getCurrentUser, UserProfile, isSessionAuthenticated } from './services/auth';
 
 
 let hoverSynth: Tone.Synth | null = null;
@@ -1349,8 +1349,8 @@ export default function App() {
   const interviewStartTimeRef = useRef<number>(0);
 
   // User Profile & Authentication State
-  const [currentUser, setCurrentUser] = useState<UserProfile>(getCurrentUser());
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getCurrentUser());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(() => !isSessionAuthenticated());
 
   // Feedback & Autonomous Bug Report State
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
@@ -1361,6 +1361,8 @@ export default function App() {
   useEffect(() => {
     if (currentUser?.id) {
       getUserInterviewSessions(currentUser.id).then(sessions => setSavedSessionCount(sessions.length)).catch(() => {});
+    } else {
+      setSavedSessionCount(0);
     }
   }, [currentUser]);
 
@@ -1768,10 +1770,10 @@ export default function App() {
 
       const newSession: InterviewSession = {
         id: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        userId: currentUser.id,
-        userName: currentUser.name,
+        userId: currentUser?.id || 'guest',
+        userName: currentUser?.name || 'Guest Candidate',
         company: interviewCompany,
-        role: interviewRole || currentUser.title || 'Candidate',
+        role: interviewRole || currentUser?.title || 'Candidate',
         startedAt: Date.now(),
         durationSeconds: 0,
         status: 'in-progress',
@@ -1789,7 +1791,9 @@ export default function App() {
       setCurrentInterviewSession(newSession);
       currentInterviewSessionRef.current = newSession;
       saveInterviewSession(newSession).then(() => {
-        getUserInterviewSessions(currentUser.id).then(s => setSavedSessionCount(s.length)).catch(() => {});
+        if (currentUser?.id) {
+          getUserInterviewSessions(currentUser.id).then(s => setSavedSessionCount(s.length)).catch(() => {});
+        }
       }).catch(console.error);
     } else if (!isInterviewMode) {
       stopSpeaking();
@@ -1819,9 +1823,9 @@ export default function App() {
 
     const updatedSess: InterviewSession = {
       ...currentSess,
-      userId: currentSess.userId || currentUser.id,
-      userName: currentSess.userName || currentUser.name,
-      role: interviewRole || currentSess.role || currentUser.title || 'Candidate',
+      userId: currentSess.userId || currentUser?.id || 'guest',
+      userName: currentSess.userName || currentUser?.name || 'Guest Candidate',
+      role: interviewRole || currentSess.role || currentUser?.title || 'Candidate',
       company: interviewCompany || currentSess.company,
       endedAt: Date.now(),
       durationSeconds: durationSec,
@@ -1846,8 +1850,10 @@ export default function App() {
       setCurrentInterviewSession(evaluatedSess);
       currentInterviewSessionRef.current = evaluatedSess;
       await saveInterviewSession(evaluatedSess);
-      const userSessions = await getUserInterviewSessions(currentUser.id);
-      setSavedSessionCount(userSessions.length);
+      if (currentUser?.id) {
+        const userSessions = await getUserInterviewSessions(currentUser.id);
+        setSavedSessionCount(userSessions.length);
+      }
     } catch (err) {
       console.error('[Evaluation] Failed to evaluate session:', err);
     } finally {
@@ -3324,31 +3330,41 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
             </div>
           </div>
           <div className="flex items-center gap-2.5">
-            {/* Candidate Identity Profile Pill */}
-            <button
-              onClick={() => { playHoverSound(); setIsAuthModalOpen(true); }}
-              className="flex items-center gap-2.5 px-3 py-1.5 bg-black/50 backdrop-blur-xl border border-cyan-500/30 hover:border-cyan-400 rounded-2xl text-white transition-all hover:bg-black/80 group shadow-[0_0_20px_rgba(34,211,238,0.15)]"
-              title="Candidate Profile & Switch User"
-            >
-              <img
-                src={currentUser.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentUser.name)}`}
-                alt={currentUser.name}
-                className="w-7 h-7 rounded-xl bg-black/60 border border-white/10 p-0.5 object-cover shrink-0"
-              />
-              <div className="flex flex-col items-start text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black text-white group-hover:text-cyan-300 transition-colors">
-                    {currentUser.name}
-                  </span>
-                  <span className="px-1.5 py-0.2 rounded-full text-[8px] font-mono bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 uppercase">
-                    {currentUser.role}
+            {/* Candidate Identity Profile Pill / Sign In */}
+            {currentUser ? (
+              <button
+                onClick={() => { playHoverSound(); setIsAuthModalOpen(true); }}
+                className="flex items-center gap-2.5 px-3 py-1.5 bg-black/50 backdrop-blur-xl border border-cyan-500/30 hover:border-cyan-400 rounded-2xl text-white transition-all hover:bg-black/80 group shadow-[0_0_20px_rgba(34,211,238,0.15)]"
+                title="Candidate Profile & Switch User"
+              >
+                <img
+                  src={currentUser.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentUser.name)}`}
+                  alt={currentUser.name}
+                  className="w-7 h-7 rounded-xl bg-black/60 border border-white/10 p-0.5 object-cover shrink-0"
+                />
+                <div className="flex flex-col items-start text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-white group-hover:text-cyan-300 transition-colors">
+                      {currentUser.name}
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[8px] font-mono bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 uppercase">
+                      {currentUser.role}
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-white/50 truncate max-w-[90px]">
+                    {currentUser.title || 'Candidate'}
                   </span>
                 </div>
-                <span className="text-[9px] text-white/50 truncate max-w-[90px]">
-                  {currentUser.title || 'Candidate'}
-                </span>
-              </div>
-            </button>
+              </button>
+            ) : (
+              <button
+                onClick={() => { playHoverSound(); setIsAuthModalOpen(true); }}
+                className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 border border-cyan-500/50 hover:border-cyan-400 rounded-2xl text-cyan-300 hover:text-white text-xs font-bold transition-all shadow-[0_0_20px_rgba(34,211,238,0.2)]"
+              >
+                <User className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Sign In / Profile</span>
+              </button>
+            )}
 
             <button
               onClick={() => { playHoverSound(); setIsDashboardOpen(true); }}
@@ -4068,18 +4084,23 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
         onClose={() => setIsDashboardOpen(false)}
         onSelectSession={(sess) => setCurrentInterviewSession(sess)}
         isEvaluating={isEvaluating}
-        currentUser={currentUser}
+        currentUser={currentUser || undefined}
       />
 
       {/* Candidate Profile & Authentication Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
+        isMandatory={!currentUser || !isSessionAuthenticated()}
         onUserChanged={(user) => {
           setCurrentUser(user);
-          getUserInterviewSessions(user.id)
-            .then((s) => setSavedSessionCount(s.length))
-            .catch(() => {});
+          if (user?.id) {
+            getUserInterviewSessions(user.id)
+              .then((s) => setSavedSessionCount(s.length))
+              .catch(() => {});
+          } else {
+            setSavedSessionCount(0);
+          }
         }}
       />
     </div>
