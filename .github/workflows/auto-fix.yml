@@ -6,6 +6,11 @@ on:
   issue_comment:
     types: [created]
 
+# Prevent duplicate parallel runs when an issue is created with multiple labels
+concurrency:
+  group: auto-fix-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -49,12 +54,12 @@ jobs:
       - name: 📦 Install Dependencies
         run: npm ci
 
-      - name: 🧠 Run Autonomous Gemini Auto-Fix Agent
+      - name: 🧠 Run Autonomous Multi-LLM Auto-Fix Agent
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Stub the other VITE_ vars so vite build doesn't crash on missing env
-          VITE_MISTRAL_API_KEY: ${{ secrets.VITE_MISTRAL_API_KEY || 'stub' }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY || secrets.VITE_MISTRAL_API_KEY }}
+          VITE_MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY || secrets.VITE_MISTRAL_API_KEY }}
           VITE_DEEPGRAM_API_KEY: ${{ secrets.VITE_DEEPGRAM_API_KEY || 'stub' }}
           VITE_CONVAI_API_KEY: ${{ secrets.VITE_CONVAI_API_KEY || 'stub' }}
           VITE_CONVAI_CHARACTER_ID: ${{ secrets.VITE_CONVAI_CHARACTER_ID || 'stub' }}
@@ -63,7 +68,7 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: node scripts/auto-fix-agent.js
 
-      - name: 🚀 Commit, Push & Open Pull Request
+      - name: 🚀 Commit, Push & Open Single Pull Request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUM: ${{ github.event.issue.number }}
@@ -73,19 +78,20 @@ jobs:
             exit 0
           fi
 
-          BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}-$(date +%s)"
+          # Deterministic single branch per issue (prevents multiple branch pollution)
+          BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git checkout -b "$BRANCH_NAME"
+          git checkout -B "$BRANCH_NAME"
           git add src/ scripts/
 
           DIAGNOSIS=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).diagnosis)")
           COMMIT_MSG=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).commitMessage)")
 
-          # Skip if nothing changed
+          # Skip if no code changes
           if git diff --cached --quiet; then
-            echo "ℹ️  No file changes — leaving a diagnostic comment on the issue."
+            echo "ℹ️  No file changes — leaving diagnostic comment on the issue."
             gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Analysis Complete**
 
           The agent ran successfully but determined **no code changes are needed** for this issue.
@@ -96,50 +102,58 @@ jobs:
           fi
 
           git commit -m "$COMMIT_MSG"
-          git push origin "$BRANCH_NAME"
+          git push -f origin "$BRANCH_NAME"
 
-          # Try to open a PR; if the repo setting blocks it, fall back to a comment with a manual link
-          PR_URL=$(gh pr create \
-            --title "🤖 Auto-Fix for Issue #${ISSUE_NUM}: ${COMMIT_MSG}" \
-            --body "## 🤖 Autonomous AI Fix Report
+          # Check if PR already exists for this branch
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state open --json url --jq '.[0].url')
 
-          Closes #${ISSUE_NUM}
+          if [ -n "$EXISTING_PR" ]; then
+            echo "✅ Existing PR updated: $EXISTING_PR"
+            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Updated!**
 
-          ### 🔍 Root Cause Diagnosis
-          ${DIAGNOSIS}
+          I pushed an updated fix to the existing PR:
+          👉 **Pull Request**: $EXISTING_PR
 
-          ### 🧪 Automated Verification
-          - \`npm run lint\` passed (0 TypeScript errors)
-          - \`npm run build\` passed (Vite bundle compiled successfully)
-
-          ---
-          *Generated automatically by the Autonomous Gemini Bug-Fix Agent.*" \
-            --base main \
-            --head "$BRANCH_NAME" 2>&1) || true
-
-          if echo "$PR_URL" | grep -q "https://github.com"; then
-            echo "✅ Pull Request created: $PR_URL"
-            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Ready for Review!**
-
-          I diagnosed the bug and generated a verified fix that passed all build checks.
-
-          👉 **Pull Request**: $PR_URL
-
-          **Root Cause**:
+          **Updated Diagnosis**:
           > ${DIAGNOSIS}"
           else
-            # PR creation blocked by repo permissions — post a manual merge link instead
-            MANUAL_URL="https://github.com/jama7777/Professional_friend/pull/new/${BRANCH_NAME}"
-            echo "⚠️  Automatic PR creation blocked. Posting manual link."
-            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Generated!**
+            PR_URL=$(gh pr create \
+              --title "🤖 Auto-Fix for Issue #${ISSUE_NUM}: ${COMMIT_MSG}" \
+              --body "## 🤖 Autonomous AI Fix Report
 
-          The fix was committed and pushed, but automatic PR creation is blocked by repository settings.
+            Closes #${ISSUE_NUM}
 
-          👉 **Open the PR manually here**: $MANUAL_URL
+            ### 🔍 Root Cause Diagnosis
+            ${DIAGNOSIS}
 
-          **What was fixed**:
-          > ${DIAGNOSIS}
+            ### 🧪 Automated Verification
+            - \`npm run lint\` passed (0 TypeScript errors)
+            - \`npm run build\` passed (Vite bundle compiled successfully)
 
-          ---
-          *To enable fully automatic PRs: go to **Settings → Actions → General → Workflow permissions** and check ✅ **Allow GitHub Actions to create and approve pull requests**.*"
+            ---
+            *Generated automatically by the Autonomous AI Bug-Fix Agent.*" \
+              --base main \
+              --head "$BRANCH_NAME" 2>&1) || true
+
+            if echo "$PR_URL" | grep -q "https://github.com"; then
+              echo "✅ Pull Request created: $PR_URL"
+              gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Ready for Review!**
+
+            I diagnosed the bug and generated a verified fix that passed all build checks.
+
+            👉 **Pull Request**: $PR_URL
+
+            **Root Cause**:
+            > ${DIAGNOSIS}"
+            else
+              MANUAL_URL="https://github.com/jama7777/Professional_friend/pull/new/${BRANCH_NAME}"
+              gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Generated!**
+
+            The fix was committed and pushed to branch \`${BRANCH_NAME}\`.
+
+            👉 **Open the PR here**: $MANUAL_URL
+
+            **Root Cause**:
+            > ${DIAGNOSIS}"
+            fi
           fi
