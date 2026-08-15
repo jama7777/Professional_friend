@@ -17,6 +17,18 @@ coverage/
 .env*.local
 !.env.example
 
+# Private Company Documents & Spreadsheets
+*.xlsx
+*.xls
+*.csv
+*Daily Activities*
+*daily_activities*
+*techstack*
+docs/internal/
+docs/private/
+internal/
+private/
+
 # Large Unused 3D Assets & Test Models (>10MB)
 public/models/ciri/
 public/models/party_f/

@@ -92,14 +92,23 @@ Open [http://localhost:3000/](http://localhost:3000/) in your browser.
 ```text
 Professional_friend/
 ├── .env.example              # Single-entry environment variables template
-├── .gitignore                # Optimized Git ignore file
+├── .gitignore                # Optimized Git ignore file (excludes secrets & private spreadsheets)
 ├── package.json              # Project scripts & dependencies
 ├── tsconfig.json             # TypeScript configuration
 ├── vite.config.ts            # Vite standalone proxy & bundler settings
 ├── index.html                # App entry HTML
+├── docs/                     # Architectural and technical documentation
+│   ├── FRAMEWORKS_AND_INBUILT_SYSTEM_DOC.md  # Framework and system architecture
+│   ├── PROJECT_ACTIVITIES_MATRIX.md          # Technical specifications and matrices
+│   └── internal/             # (Gitignored) Private company documents & spreadsheets
 ├── src/
 │   ├── main.tsx              # React mounting with ErrorBoundary
-│   ├── App.tsx               # Core application, 3D scene, & interview logic
+│   ├── App.tsx               # Core application, 3D scene, biometrics & state
+│   ├── components/
+│   │   └── InterviewDashboard.tsx  # Cyberpunk Glassmorphic Evaluation Dashboard
+│   ├── services/
+│   │   ├── db.ts             # IndexedDB local database service for interview history
+│   │   └── evaluator.ts      # AI performance, depth & mistake scoring engine
 │   ├── index.css             # Tailwind design system
 │   └── vite-env.d.ts         # TypeScript environment types
 └── public/

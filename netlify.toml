@@ -1,0 +1,26 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+[[redirects]]
+  from = "/api/mistral/*"
+  to = "https://api.mistral.ai/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/groq/*"
+  to = "https://api.groq.com/openai/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/deepgram/*"
+  to = "https://api.deepgram.com/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

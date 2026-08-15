@@ -1,6 +1,6 @@
 import React, { Component, useEffect, useRef, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Camera, Square, Play, Music, Loader2, AlertCircle, Key, Activity, Cpu, ScanFace, Info, X, Send, MessageSquare, User, Bot, Mic, MicOff, Volume2, VolumeX, ChevronDown, Globe } from 'lucide-react';
+import { Camera, Square, Play, Music, Loader2, AlertCircle, Key, Activity, Cpu, ScanFace, Info, X, Send, MessageSquare, User, Bot, Mic, MicOff, Volume2, VolumeX, ChevronDown, Globe, Award, BarChart3, ShieldAlert, Sparkles, CheckCircle2 } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
@@ -12,6 +12,14 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ConvaiClient } from '@convai/web-sdk';
+import {
+  saveInterviewSession,
+  getAllInterviewSessions,
+  InterviewSession,
+  InterviewQAPair
+} from './services/db';
+import { evaluateInterviewSession } from './services/evaluator';
+import { InterviewDashboard } from './components/InterviewDashboard';
 
 
 let hoverSynth: Tone.Synth | null = null;
@@ -1327,6 +1335,20 @@ export default function App() {
   const companies = ["Meta", "Google", "Amazon", "Netflix", "Apple", "Microsoft", "OpenAI", "NVIDIA", "Tesla", "SpaceX", "Stripe", "Airbnb", "Uber"];
   const chairRef = useRef<THREE.Group | null>(null);
 
+  // Interview History & Evaluation State
+  const [currentInterviewSession, setCurrentInterviewSession] = useState<InterviewSession | null>(null);
+  const currentInterviewSessionRef = useRef<InterviewSession | null>(null);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [savedSessionCount, setSavedSessionCount] = useState(0);
+  const lastInterviewerQuestionRef = useRef<string>('');
+  const sessionEmotionsRef = useRef<string[]>([]);
+  const interviewStartTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    getAllInterviewSessions().then(sessions => setSavedSessionCount(sessions.length)).catch(() => {});
+  }, []);
+
   const convaiClientRef = useRef<ConvaiClient | null>(null);
   const convaiApiKey = import.meta.env.VITE_CONVAI_API_KEY;
   const convaiCharacterId = import.meta.env.VITE_CONVAI_CHARACTER_ID;
@@ -1724,6 +1746,34 @@ export default function App() {
       const welcome = `Welcome to your ${interviewCompany} Technical Interview. I'm your interviewer today. Before we begin, which specific role are you applying for at ${interviewCompany}? (e.g., Software Engineer, Product Manager, Data Scientist)`;
       setChatMessages([{ role: 'assistant', content: welcome }]);
       speak(welcome, undefined, currentSpeechTurnRef.current);
+
+      interviewStartTimeRef.current = Date.now();
+      lastInterviewerQuestionRef.current = welcome;
+      sessionEmotionsRef.current = [consoleState.emotion];
+
+      const newSession: InterviewSession = {
+        id: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        company: interviewCompany,
+        role: interviewRole || 'Candidate',
+        startedAt: Date.now(),
+        durationSeconds: 0,
+        status: 'in-progress',
+        transcript: [
+          {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: welcome,
+            timestamp: Date.now()
+          }
+        ],
+        qaPairs: [],
+        dominantEmotions: [consoleState.emotion]
+      };
+      setCurrentInterviewSession(newSession);
+      currentInterviewSessionRef.current = newSession;
+      saveInterviewSession(newSession).then(() => {
+        getAllInterviewSessions().then(s => setSavedSessionCount(s.length));
+      }).catch(console.error);
     } else if (!isInterviewMode) {
       stopSpeaking();
       if (chairRef.current) chairRef.current.visible = false;
@@ -1732,6 +1782,59 @@ export default function App() {
       setFetchedQuestions('');
     }
   }, [isInterviewActive, isInterviewMode]);
+
+  // Finish or early-stop interview & run comprehensive AI evaluation
+  const handleFinishInterview = async (finishStatus: 'completed' | 'ended-early' = 'completed') => {
+    stopSpeaking();
+    playHoverSound();
+    setIsInterviewActive(false);
+    setIsInterviewMode(false);
+    if (chairRef.current) chairRef.current.visible = false;
+
+    const currentSess = currentInterviewSessionRef.current;
+    if (!currentSess) {
+      setIsDashboardOpen(true);
+      return;
+    }
+
+    const durationSec = Math.max(1, Math.round((Date.now() - (interviewStartTimeRef.current || currentSess.startedAt)) / 1000));
+    const uniqueEmotions = Array.from(new Set(sessionEmotionsRef.current));
+
+    const updatedSess: InterviewSession = {
+      ...currentSess,
+      role: interviewRole || currentSess.role || 'Candidate',
+      company: interviewCompany || currentSess.company,
+      endedAt: Date.now(),
+      durationSeconds: durationSec,
+      status: finishStatus,
+      dominantEmotions: uniqueEmotions.length > 0 ? uniqueEmotions : [consoleState.emotion]
+    };
+
+    setCurrentInterviewSession(updatedSess);
+    currentInterviewSessionRef.current = updatedSess;
+    await saveInterviewSession(updatedSess);
+
+    // Open Dashboard immediately in evaluating mode
+    setIsDashboardOpen(true);
+    setIsEvaluating(true);
+
+    try {
+      const evaluation = await evaluateInterviewSession(updatedSess);
+      const evaluatedSess: InterviewSession = {
+        ...updatedSess,
+        evaluation
+      };
+      setCurrentInterviewSession(evaluatedSess);
+      currentInterviewSessionRef.current = evaluatedSess;
+      await saveInterviewSession(evaluatedSess);
+      const all = await getAllInterviewSessions();
+      setSavedSessionCount(all.length);
+    } catch (err) {
+      console.error('[Evaluation] Failed to evaluate session:', err);
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
 
   // Fetch real interview questions by searching authoritative sources
   const fetchInterviewQuestions = async (company: string, role: string) => {
@@ -1810,6 +1913,43 @@ Format: numbered list only, no extra commentary. Include the likely source in br
     if (isInterviewActive && !interviewRole) {
       setInterviewRole(userMsg.trim());
       fetchInterviewQuestions(interviewCompany, userMsg.trim()); // runs in background
+    }
+
+    // Record candidate answer into interview session
+    if (isInterviewActive) {
+      const prevQuestion = lastInterviewerQuestionRef.current || `Technical interview question for ${interviewCompany}`;
+      sessionEmotionsRef.current.push(consoleState.emotion);
+
+      if (currentInterviewSessionRef.current) {
+        const newQa: InterviewQAPair = {
+          question: prevQuestion,
+          answer: userMsg,
+          timestamp: Date.now(),
+          emotion: consoleState.emotion
+        };
+
+        const updatedQaPairs = [...currentInterviewSessionRef.current.qaPairs, newQa];
+        const updatedTranscript = [
+          ...currentInterviewSessionRef.current.transcript,
+          {
+            id: `msg_u_${Date.now()}`,
+            role: 'user' as const,
+            content: userMsg,
+            timestamp: Date.now(),
+            emotion: consoleState.emotion
+          }
+        ];
+
+        const updated: InterviewSession = {
+          ...currentInterviewSessionRef.current,
+          role: interviewRole || userMsg.trim(),
+          qaPairs: updatedQaPairs,
+          transcript: updatedTranscript
+        };
+        setCurrentInterviewSession(updated);
+        currentInterviewSessionRef.current = updated;
+        saveInterviewSession(updated).catch(console.error);
+      }
     }
 
     // ── Primary: Gemini 2.5 Flash with Google Search Grounding ──────────────
@@ -1969,6 +2109,29 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
           console.warn('[Grounding] REST fetch failed:', groundingErr);
         }
 
+        // Persist interviewer question to active interview session
+        if (isInterviewActive && geminiFullText) {
+          lastInterviewerQuestionRef.current = geminiFullText;
+          if (currentInterviewSessionRef.current) {
+            const updatedTranscript = [
+              ...currentInterviewSessionRef.current.transcript,
+              {
+                id: `msg_a_${Date.now()}`,
+                role: 'assistant' as const,
+                content: geminiFullText,
+                timestamp: Date.now()
+              }
+            ];
+            const updated = {
+              ...currentInterviewSessionRef.current,
+              transcript: updatedTranscript
+            };
+            setCurrentInterviewSession(updated);
+            currentInterviewSessionRef.current = updated;
+            saveInterviewSession(updated).catch(console.error);
+          }
+        }
+
         setIsChatLoading(false);
         return;
       } catch (err: any) {
@@ -2120,6 +2283,29 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
       }
 
       flushSentence(sentBuf);
+
+      // Persist Mistral interviewer question to active interview session
+      if (isInterviewActive && fullText) {
+        lastInterviewerQuestionRef.current = fullText;
+        if (currentInterviewSessionRef.current) {
+          const updatedTranscript = [
+            ...currentInterviewSessionRef.current.transcript,
+            {
+              id: `msg_a_${Date.now()}`,
+              role: 'assistant' as const,
+              content: fullText,
+              timestamp: Date.now()
+            }
+          ];
+          const updated = {
+            ...currentInterviewSessionRef.current,
+            transcript: updatedTranscript
+          };
+          setCurrentInterviewSession(updated);
+          currentInterviewSessionRef.current = updated;
+          saveInterviewSession(updated).catch(console.error);
+        }
+      }
 
     } catch (error: any) {
       console.error('Chat error:', error);
@@ -3118,7 +3304,20 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
               <span className="text-[10px] font-mono text-cyan-100/70 uppercase tracking-widest">{status}</span>
             </div>
           </div>
-          <div className="flex gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { playHoverSound(); setIsDashboardOpen(true); }}
+              className="flex items-center gap-2 px-3.5 py-2.5 bg-black/40 backdrop-blur border border-cyan-500/30 rounded-xl text-cyan-300 hover:text-white hover:bg-cyan-500/20 hover:border-cyan-500/50 transition-all shadow-lg shadow-cyan-500/10 text-xs font-bold"
+              title="View Interview Performance Dashboard & History"
+            >
+              <Award className="w-4 h-4 text-cyan-400" />
+              <span className="hidden sm:inline">Analytics & History</span>
+              {savedSessionCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-mono border border-cyan-400/30">
+                  {savedSessionCount}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => setIsInfoOpen(true)}
               className="p-3 bg-black/40 backdrop-blur border border-white/10 rounded-xl text-white/50 hover:text-white transition-all hover:bg-white/10"
@@ -3387,14 +3586,32 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
                 {isAudioEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
               </button>
 
-              {/* Interview mode */}
+              {/* Active interview Finish & Evaluate button */}
+              {isInterviewActive && (
+                <button
+                  onClick={() => handleFinishInterview('completed')}
+                  title="Finish Interview & Generate AI Performance Evaluation"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-pink-500/20 to-purple-500/20 border border-pink-500/40 hover:border-pink-500/70 text-pink-300 hover:text-white rounded-2xl text-xs font-bold transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)] animate-pulse"
+                >
+                  <Award className="w-4 h-4 text-pink-400" />
+                  <span className="hidden md:inline">Finish & Evaluate</span>
+                </button>
+              )}
+
+              {/* Interview mode toggle */}
               <button
                 onClick={() => {
                   playHoverSound();
-                  if (isInterviewMode) { setIsInterviewMode(false); setIsInterviewActive(false); }
-                  else setIsInterviewMode(true);
+                  if (isInterviewActive) {
+                    handleFinishInterview('ended-early');
+                  } else if (isInterviewMode) {
+                    setIsInterviewMode(false);
+                    setIsInterviewActive(false);
+                  } else {
+                    setIsInterviewMode(true);
+                  }
                 }}
-                title="Toggle Interview Mode"
+                title={isInterviewActive ? "End Interview Early & Evaluate" : "Toggle Interview Mode"}
                 className={`p-3.5 rounded-2xl border transition-all ${isInterviewMode
                   ? 'text-pink-400 border-pink-500/30 bg-pink-500/10 shadow-[0_0_15px_rgba(236,72,153,0.2)]'
                   : 'text-white/20 border-white/5 hover:text-white/50'
@@ -3646,6 +3863,15 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Persistent Interview Dashboard & Performance Analytics */}
+      <InterviewDashboard
+        session={currentInterviewSession}
+        isOpen={isDashboardOpen}
+        onClose={() => setIsDashboardOpen(false)}
+        onSelectSession={(sess) => setCurrentInterviewSession(sess)}
+        isEvaluating={isEvaluating}
+      />
     </div>
   );
 }
