@@ -1,0 +1,67 @@
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import { defineConfig, loadEnv } from 'vite';
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', '');
+  return {
+    plugins: [react(), tailwindcss()],
+    define: {
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.GROQ_API_KEY': JSON.stringify(env.GROQ_API_KEY),
+      'process.env.MISTRAL_API_KEY': JSON.stringify(env.MISTRAL_API_KEY),
+      'process.env.DEEPGRAM_API_KEY': JSON.stringify(env.DEEPGRAM_API_KEY),
+
+      'process.env.CARTESIA_API_KEY': JSON.stringify(env.CARTESIA_API_KEY),
+      'process.env.CONVAI_API_KEY': JSON.stringify(env.CONVAI_API_KEY),
+      'process.env.CONVAI_CHARACTER_ID': JSON.stringify(env.CONVAI_CHARACTER_ID),
+    },
+
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
+    },
+    server: {
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // Do not modifyâ€”file watching is disabled to prevent flickering during agent edits.
+      hmr: process.env.DISABLE_HMR !== 'true',
+      proxy: {
+        // NIM + Tavily agent loop — forwards to local Express server
+        '/api/nim-agent': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+        },
+        // Mistral relay — forwards to local Express server which calls Mistral server-side
+        '/api/mistral-chat': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+        },
+        '/api/groq': {
+          target: 'https://api.groq.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/groq/, '/openai/v1'),
+        },
+        '/api/mistral': {
+          target: 'https://api.mistral.ai',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/mistral/, ''),
+        },
+        '/api/deepgram': {
+          target: 'https://api.deepgram.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/deepgram/, '/v1'),
+        },
+        '/api/cartesia': {
+          target: 'https://api.cartesia.ai',
+          changeOrigin: true,
+          ws: true,
+          rewrite: (path) => path.replace(/^\/api\/cartesia/, ''),
+        },
+      },
+
+
+    },
+  };
+});

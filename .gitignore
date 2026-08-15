@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Production build artifacts
+dist/
+build/
+coverage/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+!.env.example
+
+# Large Unused 3D Assets & Test Models (>10MB)
+public/models/ciri/
+public/models/party_f/
+public/avatar/
+public/textures_realistic
+
+# Audio / Video recordings & test dumps
+*.wav
+*.mp3
+*.mp4
+*.webm
+*.ogg
+*.raw
+*.pcm
+
+# Logs & Diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Operating System & IDE
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+.qodo/
+
+# TypeScript build cache
+*.tsbuildinfo
