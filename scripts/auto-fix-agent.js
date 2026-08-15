@@ -1,5 +1,5 @@
 // Autonomous Auto-Fix Agent for Professional Friend
-// Powered by Google Gemini 2.0 Flash inside GitHub Actions
+// Multi-LLM Engine: Google Gemini with automatic Mistral fallback
 
 import fs from 'fs';
 import path from 'path';
@@ -7,23 +7,15 @@ import { execSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
 
 async function main() {
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const geminiKey  = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const mistralKey = process.env.MISTRAL_API_KEY || process.env.VITE_MISTRAL_API_KEY || '5JcglJFMR52ixZlEoeVpcLqSlpvjV6BQ';
   const issueTitle  = process.env.ISSUE_TITLE  || 'Bug Report';
   const issueBody   = process.env.ISSUE_BODY   || 'No description provided';
   const issueNumber = process.env.ISSUE_NUMBER || 'test';
 
-  if (!geminiKey) {
-    console.error('❌ GEMINI_API_KEY is not set in repository secrets.');
-    console.error('   Go to GitHub → Settings → Secrets & Variables → Actions → New repository secret');
-    console.error('   Name: GEMINI_API_KEY   Value: your Gemini API key from aistudio.google.com');
-    process.exit(1);
-  }
-
   console.log(`🤖 Auto-Fix Agent starting for Issue #${issueNumber}`);
   console.log(`📌 Title: "${issueTitle}"`);
   console.log(`📝 Preview: ${issueBody.slice(0, 200)}...`);
-
-  const client = new GoogleGenAI({ apiKey: geminiKey });
 
   // ── 1. Gather source files ────────────────────────────────────────────────
   const srcFiles = getSourceFiles('./src');
@@ -34,19 +26,19 @@ async function main() {
     const stat = fs.statSync(f);
     if (stat.size > 80_000) {
       console.log(`  ⚠️  Skipping ${f} (${Math.round(stat.size / 1024)}KB — too large for context)`);
-      fileContents[f] = `// [FILE TOO LARGE — ${Math.round(stat.size / 1024)}KB — SKIPPED FROM CONTEXT]`;
+      fileContents[f] = `// [FILE EXCLUDED FROM CONTEXT: ${f} (${Math.round(stat.size / 1024)}KB). Do NOT modify unless explicitly requested in bug description.]`;
     } else {
       fileContents[f] = fs.readFileSync(f, 'utf8');
     }
   }
 
-  // ── 2. Build prompts ──────────────────────────────────────────────────────
+  // ── 2. Build system prompt ────────────────────────────────────────────────
   const systemPrompt = `You are a Principal Staff Software Engineer & Autonomous Code Repair Agent.
-Your job: diagnose and fix the reported bug in this React/TypeScript/Vite repository.
+Your job: accurately diagnose and fix the reported bug in this React/TypeScript/Vite repository.
 
-Tech stack & dependencies:
-- React 19, TypeScript 5, Vite 6, Tailwind CSS 4
-- "motion": "^12.x" is installed. Correct import is: import { motion, AnimatePresence } from 'motion/react'; DO NOT change this to 'framer-motion'.
+Tech stack & constraints:
+- React 19, TypeScript 5.8, Vite 6, Tailwind CSS 4
+- "motion": "^12.x" is installed. Correct import is: import { motion, AnimatePresence } from 'motion/react'; DO NOT change to 'framer-motion'.
 - Lucide React icons, Three.js, @google/genai, IndexedDB.
 
 Source files available:
@@ -54,12 +46,12 @@ ${Object.keys(fileContents).map(f => `  - ${f}`).join('\n')}
 
 RULES:
 1. Analyze the issue title, error message, stack trace, and user description carefully.
-2. If this issue is just a test, question, or inquiry where no bug exists in code, return "fixedFiles": [] and explain in "diagnosis".
-3. If there is a real bug, identify the EXACT root cause and provide COMPLETE, FULL file replacement content with all imports, functions, and closing tags intact. Do NOT truncate.
-4. Only include files you actually changed in fixedFiles.
+2. If this issue does NOT describe an actionable bug or test modification, return "fixedFiles": [] and explain why in "diagnosis".
+3. When providing a file fix in fixedFiles, provide the COMPLETE, FULL file replacement content with all imports, functions, and closing tags intact. Do NOT truncate.
+4. Only include files you actually modified in fixedFiles.
 5. The fixed code MUST pass: tsc --noEmit AND vite build with 0 errors.
 
-RESPONSE SCHEMA (output ONLY valid JSON matching this schema, no markdown wrapping):
+RESPONSE SCHEMA (output ONLY valid JSON matching this schema, no markdown code fences):
 {
   "diagnosis": "2-3 sentence root cause explanation referencing specific code.",
   "fixedFiles": [
@@ -84,55 +76,86 @@ ${Object.entries(fileContents)
 
 Analyze the issue and generate the JSON fix now.`;
 
-  // ── 3. Agentic retry loop ─────────────────────────────────────────────────
+  // ── 3. Multi-Engine Query Helper ──────────────────────────────────────────
+  async function queryLLM(promptText) {
+    // Try Gemini first if key is present
+    if (geminiKey) {
+      try {
+        console.log('🧠 Querying Gemini (gemini-2.5-flash)...');
+        const client = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await client.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${promptText}` }] }],
+          config: { responseMimeType: 'application/json', temperature: 0.1 }
+        });
+        const text = typeof response.text === 'function' ? response.text() : (response.text ?? '');
+        if (text) return { text, engine: 'Gemini 2.5 Flash' };
+      } catch (err) {
+        console.warn(`⚠️  Gemini failed (${err.message.slice(0, 120)}). Falling back to Mistral...`);
+      }
+    }
+
+    // Fallback to Mistral
+    if (mistralKey) {
+      console.log('🧠 Querying Mistral Large...');
+      const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${mistralKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'mistral-large-latest',
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: promptText }
+          ],
+          temperature: 0.1
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content ?? '';
+        return { text, engine: 'Mistral Large' };
+      } else {
+        const errText = await res.text();
+        throw new Error(`Mistral API Error ${res.status}: ${errText.slice(0, 200)}`);
+      }
+    }
+
+    throw new Error('No working AI API key available (both Gemini and Mistral failed).');
+  }
+
+  // ── 4. Fix generation & verification loop ─────────────────────────────────
   let lastBuildError = '';
-  const maxAttempts  = 3;
-  const modelsToTry  = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  const maxAttempts  = 2;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const currentModel = modelsToTry[(attempt - 1) % modelsToTry.length];
-    console.log(`\n🧠 Gemini analysis (${currentModel}) — Attempt ${attempt}/${maxAttempts}...`);
+    console.log(`\n🧠 Auto-Fix Analysis — Attempt ${attempt}/${maxAttempts}...`);
 
     const finalPrompt = lastBuildError
       ? `${userPrompt}\n\n⚠️ PREVIOUS ATTEMPT BUILD ERROR:\n${lastBuildError}\nFix the code to eliminate this error and ensure valid TypeScript and complete JSX tags.`
       : userPrompt;
 
-    let responseText = '';
+    let responseData;
     try {
-      const response = await client.models.generateContent({
-        model: currentModel,
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemPrompt}\n\n${finalPrompt}` }],
-          },
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      });
-
-      responseText = typeof response.text === 'function' ? response.text() : (response.text ?? '');
-    } catch (apiErr) {
-      console.error(`❌ Gemini API call failed on attempt ${attempt}:`, apiErr.message);
-      lastBuildError = `Gemini API error: ${apiErr.message}`;
-      // Sleep before retry to handle rate limits
-      await new Promise(r => setTimeout(r, 4000));
+      responseData = await queryLLM(finalPrompt);
+      console.log(`✅ Response received from ${responseData.engine}`);
+    } catch (err) {
+      console.error(`❌ AI generation failed on attempt ${attempt}:`, err.message);
+      lastBuildError = err.message;
+      await new Promise(r => setTimeout(r, 3000));
       continue;
     }
 
-    const fixData = cleanAndParseJSON(responseText);
+    const fixData = cleanAndParseJSON(responseData.text);
 
     if (!fixData || !Array.isArray(fixData.fixedFiles)) {
-      console.warn('⚠️  Invalid or empty JSON response from Gemini:');
-      console.warn(responseText.slice(0, 400));
+      console.warn('⚠️  Invalid or empty JSON response from model.');
       lastBuildError = 'Response was not valid JSON with a fixedFiles array. Return ONLY the JSON object.';
       continue;
     }
 
     if (fixData.fixedFiles.length === 0) {
-      console.log('ℹ️  Gemini analyzed the issue and determined no code changes are required.');
+      console.log('ℹ️  AI analyzed the issue and determined no code changes are required.');
       console.log(`   Diagnosis: ${fixData.diagnosis}`);
       fs.writeFileSync('auto-fix-summary.json', JSON.stringify({
         diagnosis: fixData.diagnosis || 'No code changes required.',
@@ -190,14 +213,15 @@ Analyze the issue and generate the JSON fix now.`;
       console.warn(errOut.slice(0, 800));
       lastBuildError = errOut.slice(0, 1200);
 
-      // Revert dirty files so next attempt starts from a clean repo state
+      // Revert dirty files so repo stays clean
       try {
         execSync('git checkout -- .', { stdio: 'ignore' });
       } catch {}
+
+      await new Promise(r => setTimeout(r, 4000));
     }
   }
 
-  // If we reach here, record diagnosis without failing whole CI
   console.warn(`⚠️ Agent finished without a verified build. Leaving diagnostic comment.`);
   fs.writeFileSync('auto-fix-summary.json', JSON.stringify({
     diagnosis: `The AI analyzed the issue but the proposed fix failed automated verification (${lastBuildError.slice(0, 250)}...).`,
