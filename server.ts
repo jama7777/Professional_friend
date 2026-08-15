@@ -98,7 +98,7 @@ app.post('/api/nim-agent', async (req, res) => {
       ? `\n\n## Live Web Search Results (use these as your primary source)\n\n${tavilyContext}\n\n---`
       : '';
 
-    const fullSystemPrompt = (systemPrompt || 'You are VISION_SYNC AI, a smart and concise assistant.')
+    const fullSystemPrompt = (systemPrompt || 'You are Professional Friend AI, a smart and concise assistant.')
       + contextBlock;
 
     const nimMessages: { role: string; content: string }[] = [

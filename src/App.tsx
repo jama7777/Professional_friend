@@ -1763,7 +1763,7 @@ Format: numbered list only, no extra commentary. Include the likely source in br
 - Candidate emotion: ${consoleState.emotion}. Briefly acknowledge if visibly nervous or confident.
 ${qBank ? `\nDraw from these real questions: ${qBank}` : ''}`;
         })()
-        : `You are VISION_SYNC AI. Be extremely concise — 2-3 sentences max. No markdown. Cite sources briefly when relevant. Emotion context: ${consoleState.emotion}.`;
+        : `You are Professional Friend AI. Be extremely concise — 2-3 sentences max. No markdown. Cite sources briefly when relevant. Emotion context: ${consoleState.emotion}.`;
 
       // Only keep last 2 turns (4 msgs), trimmed to 200 chars each to stay lean
       const nimHistory = chatMessages.slice(-4).map(m => ({
@@ -1886,7 +1886,7 @@ ${qBank ? `\nDraw from these real questions: ${qBank}` : ''}`;
       try {
         const client = new GoogleGenAI({ apiKey: geminiKey });
 
-        let systemPrompt = `You are VISION_SYNC AI, a reasoning-focused companion. 
+        let systemPrompt = `You are Professional Friend AI, a reasoning-focused companion. 
         Current Context:
         - User Emotion: ${consoleState.emotion}
         - Visible Objects: ${consoleState.objects.join(', ') || 'None'}
@@ -2065,7 +2065,7 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
 
       const systemContent = isInterviewActive
         ? `You are a Senior Technical Interviewer at ${interviewCompany} for the "${interviewRole || 'discussed'}" role. Ask ONE question at a time. Give brief feedback after each answer. Emotion: ${consoleState.emotion}.${trimmedQ ? `\nReal questions:\n${trimmedQ}` : ''}`
-        : `You are VISION_SYNC AI, a concise assistant. Emotion: ${consoleState.emotion}. Be brief.`;
+        : `You are Professional Friend AI, a concise assistant. Emotion: ${consoleState.emotion}. Be brief.`;
 
       const abortCtrl2 = new AbortController();
       const abortTimer2 = setTimeout(() => abortCtrl2.abort(), 30000); // 30s timeout
@@ -3170,7 +3170,7 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
         {/* Top Bar */}
         <div className="flex justify-between items-start w-full pointer-events-auto">
           <div className="flex flex-col gap-2">
-            <h1 className="text-2xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]">VISION_SYNC</h1>
+            <h1 className="text-2xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]">PROFESSIONAL FRIEND</h1>
             <div className="flex items-center gap-2 bg-black/40 backdrop-blur border border-white/10 px-3 py-1 rounded-full">
               <div className={`w-2 h-2 rounded-full ${isCameraActive ? 'bg-cyan-400 animate-pulse' : 'bg-zinc-600'}`} />
               <span className="text-[10px] font-mono text-cyan-100/70 uppercase tracking-widest">{status}</span>
@@ -3677,8 +3677,8 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
             >
               <div className="flex items-start justify-between gap-4 mb-4">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Info className="w-5 h-5 shrink-0" />
-                  About Vision Sync
+                  <Info className="w-5 h-5 shrink-0 text-cyan-400" />
+                  About Professional Friend
                 </h2>
                 <button
                   onClick={() => setIsInfoOpen(false)}
@@ -3688,15 +3688,16 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
                 </button>
               </div>
               <div className="space-y-4 text-sm text-white/80 leading-relaxed">
-                <p><strong>Vision Sync</strong> uses your device's camera to analyze your facial expressions and environment in real-time.</p>
-                <p>It synchronizes your visual state with a high-fidelity 3D avatar and AI interaction system.</p>
+                <p><strong className="text-cyan-400">Professional Friend</strong> is an intelligent 3D AI Interviewer and Biometric Interaction Platform.</p>
+                <p>It combines real-time computer vision analysis with high-fidelity 3D Ready Player Me avatars, multi-band lip-sync, and multi-tier LLM intelligence.</p>
                 <ul className="list-disc pl-5 space-y-2 text-white/70">
-                  <li><strong>Biometric Analysis:</strong> Tracks facial landmarks to determine emotional state.</li>
-                  <li><strong>AI Sync:</strong> Connects with Convai for low-latency voice interaction.</li>
-                  <li><strong>Premium Rendering:</strong> Uses high-quality textures and lighting for the avatar.</li>
+                  <li><strong>Real-Time Technical Interviews:</strong> Dynamic 15-question interview bank compiled for top tech companies (Google, Meta, Apple, OpenAI) powered by Mistral Large and live Google Search grounding.</li>
+                  <li><strong>Biometric Analysis:</strong> MediaPipe vision tracking analyzes candidate emotion, attention, and engagement in real-time.</li>
+                  <li><strong>Conversational 3D Avatar:</strong> Interactive dual-environment (Office & Nature), Cyber Chair sitting mode, and natural speech head gestures.</li>
+                  <li><strong>Multi-Band Lip-Sync:</strong> Real-time Web Audio FFT formant analysis and NVIDIA Audio2Face 52 ARKit blendshape animation.</li>
                 </ul>
                 <div className="mt-4 pt-4 border-t border-white/10">
-                  <p className="text-xs text-white/60">Click the <strong className="text-white">🎤 mic button</strong> to start recording, speak, and click it again to stop. The transcription will load in the chat input for you to edit or extend before sending.</p>
+                  <p className="text-xs text-white/60">Click the <strong className="text-white">🎤 mic button</strong> to speak, or type in the chat bar. Toggle <strong className="text-cyan-400">Interview Mode</strong> to begin a structured technical interview.</p>
                 </div>
               </div>
             </motion.div>
