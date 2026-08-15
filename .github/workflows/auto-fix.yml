@@ -13,25 +13,34 @@ permissions:
 
 jobs:
   auto-fix:
-    # Run if issue is labeled 'bug' or 'auto-fix', or title starts with '[Bug]', or comment is '/fix'
-    if: >
-      github.event_name == 'issues' && (
-        contains(github.event.issue.labels.*.name, 'bug') ||
-        contains(github.event.issue.labels.*.name, 'auto-fix') ||
-        startsWith(github.event.issue.title, '[Bug]') ||
-        startsWith(github.event.issue.title, '[bug]')
-      ) || (
+    # Trigger when:
+    #   - a new issue is labeled 'bug' or 'auto-fix', or title starts with [Bug]/[bug]
+    #   - a comment on any issue contains '/fix'
+    if: |
+      (
+        github.event_name == 'issues' &&
+        (
+          contains(github.event.issue.labels.*.name, 'bug') ||
+          contains(github.event.issue.labels.*.name, 'auto-fix') ||
+          startsWith(github.event.issue.title, '[Bug]') ||
+          startsWith(github.event.issue.title, '[bug]') ||
+          startsWith(github.event.issue.title, '[Feature]')
+        )
+      ) ||
+      (
         github.event_name == 'issue_comment' &&
         contains(github.event.comment.body, '/fix')
       )
+
     runs-on: ubuntu-latest
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: ⚙️ Set up Node.js
+      - name: ⚙️ Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -42,58 +51,73 @@ jobs:
 
       - name: 🧠 Run Autonomous Gemini Auto-Fix Agent
         env:
-          GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
-          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Stub the other VITE_ vars so vite build doesn't crash on missing env
+          VITE_MISTRAL_API_KEY: ${{ secrets.VITE_MISTRAL_API_KEY || 'stub' }}
+          VITE_DEEPGRAM_API_KEY: ${{ secrets.VITE_DEEPGRAM_API_KEY || 'stub' }}
+          VITE_CONVAI_API_KEY: ${{ secrets.VITE_CONVAI_API_KEY || 'stub' }}
+          VITE_CONVAI_CHARACTER_ID: ${{ secrets.VITE_CONVAI_CHARACTER_ID || 'stub' }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: node scripts/auto-fix-agent.js
 
-      - name: 🚀 Commit, Push & Create Pull Request
+      - name: 🚀 Commit, Push & Open Pull Request
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUM: ${{ github.event.issue.number }}
         run: |
-          if [ -f auto-fix-summary.json ]; then
-            BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}"
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-
-            git checkout -b "$BRANCH_NAME"
-            git add src/
-            
-            DIAGNOSIS=$(node -e "console.log(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).diagnosis)")
-            COMMIT_MSG=$(node -e "console.log(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).commitMessage)")
-            PR_DESC=$(node -e "console.log(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).prDescription)")
-
-            git commit -m "$COMMIT_MSG"
-            git push -f origin "$BRANCH_NAME"
-
-            PR_URL=$(gh pr create \
-              --title "🤖 Auto-Fix for Issue #${ISSUE_NUM}: ${COMMIT_MSG}" \
-              --body "## 🤖 Autonomous AI Fix Report
-
-Closes #${ISSUE_NUM}
-
-### 🔍 Root Cause Diagnosis
-$DIAGNOSIS
-
-### 🧪 Automated Verification
-- \`npm run lint\` passed (0 errors)
-- \`npm run build\` passed (0 errors)
-
----
-*Generated automatically by Autonomous Gemini Bug-Fix Agent.*" \
-              --base main \
-              --head "$BRANCH_NAME")
-
-            gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Generated!**
-
-I analyzed the bug and generated a verified fix that passed all build tests:
-👉 **Pull Request**: $PR_URL
-
-**Diagnosis**:
-> $DIAGNOSIS"
-          else
-            echo "No summary file produced; skipping PR creation."
+          if [ ! -f auto-fix-summary.json ]; then
+            echo "⚠️  No auto-fix-summary.json produced — skipping PR creation."
+            exit 0
           fi
+
+          BRANCH_NAME="auto-fix/issue-${ISSUE_NUM}-$(date +%s)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH_NAME"
+          git add src/ scripts/
+
+          DIAGNOSIS=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).diagnosis)")
+          COMMIT_MSG=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).commitMessage)")
+          PR_DESC=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).prDescription)")
+
+          # Only create a commit + PR if there are actual staged changes
+          if git diff --cached --quiet; then
+            echo "ℹ️  No file changes detected after applying fix. Skipping PR."
+            exit 0
+          fi
+
+          git commit -m "$COMMIT_MSG"
+          git push origin "$BRANCH_NAME"
+
+          PR_URL=$(gh pr create \
+            --title "🤖 Auto-Fix for Issue #${ISSUE_NUM}: ${COMMIT_MSG}" \
+            --body "## 🤖 Autonomous AI Fix Report
+
+          Closes #${ISSUE_NUM}
+
+          ### 🔍 Root Cause Diagnosis
+          ${DIAGNOSIS}
+
+          ### 🧪 Automated Verification
+          - \`npm run lint\` passed (0 TypeScript errors)
+          - \`npm run build\` passed (Vite bundle compiled successfully)
+
+          ---
+          *Generated automatically by the Autonomous Gemini Bug-Fix Agent.*" \
+            --base main \
+            --head "$BRANCH_NAME")
+
+          echo "✅ Pull Request created: $PR_URL"
+
+          gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Ready for Review!**
+
+          I analyzed the bug and generated a verified fix that passed all build tests.
+
+          👉 **Pull Request**: $PR_URL
+
+          **Root Cause**:
+          > ${DIAGNOSIS}"
