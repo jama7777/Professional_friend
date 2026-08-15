@@ -3372,83 +3372,89 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
               title="View Interview Performance Dashboard & History"
             >
               <Award className="w-4 h-4 text-cyan-400" />
-              <span className="hidden sm:inline">Analytics & History</span>
+              <span className="hidden sm:inline">Analytics</span>
               {savedSessionCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-mono border border-cyan-400/30">
                   {savedSessionCount}
                 </span>
               )}
             </button>
+
+            {/* ── Voice / Music Tab — always visible in nav ── */}
+            <div className="relative">
+              <button
+                onClick={() => setIsVoiceMenuOpen(!isVoiceMenuOpen)}
+                className={`flex items-center gap-2 px-3.5 py-2.5 bg-black/40 backdrop-blur border rounded-xl text-xs font-bold transition-all shadow-lg ${
+                  isVoiceMenuOpen
+                    ? 'border-cyan-400/60 bg-cyan-500/10 text-cyan-300'
+                    : 'border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-400/50'
+                }`}
+                title="Change AI Voice"
+              >
+                <Music className={`w-4 h-4 text-cyan-400 transition-transform duration-300 ${isVoiceMenuOpen ? 'rotate-12 scale-110' : ''}`} />
+                <span className="hidden sm:inline">Voice</span>
+                <span className="text-[9px] font-mono text-cyan-300/60 hidden md:inline max-w-[70px] truncate">{selectedVoice.name}</span>
+                <ChevronDown className={`w-3 h-3 text-cyan-400/70 transition-transform duration-300 ${isVoiceMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              <AnimatePresence>
+                {isVoiceMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-full right-0 mt-2 w-60 z-[200]"
+                  >
+                    <div className="bg-zinc-900/98 backdrop-blur-3xl border border-cyan-500/20 rounded-2xl p-2 shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden max-h-72 overflow-y-auto custom-scrollbar">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-cyan-400/60 px-3 py-1.5 border-b border-white/5 mb-1">Neural Voice</p>
+                      {voices.map((v) => (
+                        <button
+                          key={v.id}
+                          onClick={() => {
+                            setSelectedVoice(v);
+                            setIsVoiceMenuOpen(false);
+                            setInfoMsg(`Voice changed to ${v.name}`);
+                            playHoverSound();
+                            speak("Hi, how are you?", v.id);
+                            setTimeout(() => setInfoMsg(null), 2000);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all mb-0.5 last:mb-0 ${
+                            selectedVoice.id === v.id
+                              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                              : 'text-white/60 hover:bg-white/5 hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${selectedVoice.id === v.id ? 'bg-cyan-400 animate-pulse' : 'bg-white/10'}`} />
+                            <span className="text-xs font-semibold">{v.name}</span>
+                          </div>
+                          <Volume2 className={`w-3 h-3 ${selectedVoice.id === v.id ? 'opacity-100 text-cyan-400' : 'opacity-20'}`} />
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <button
               onClick={() => { playHoverSound(); setIsFeedbackOpen(true); }}
               className="flex items-center gap-1.5 px-3.5 py-2.5 bg-black/40 backdrop-blur border border-rose-500/30 rounded-xl text-rose-300 hover:text-white hover:bg-rose-500/20 hover:border-rose-500/50 transition-all shadow-lg text-xs font-bold"
-              title="Report Bug or Feedback (Triggers Autonomous AI Fixer)"
+              title="Report Bug or Feedback"
             >
               <Bug className="w-4 h-4 text-rose-400" />
-              <span className="hidden sm:inline">Report Issue</span>
+              <span className="hidden sm:inline">Report</span>
             </button>
             <button
               onClick={() => setIsInfoOpen(true)}
-              className="p-3 bg-black/40 backdrop-blur border border-white/10 rounded-xl text-white/50 hover:text-white transition-all hover:bg-white/10"
+              className="p-2.5 bg-black/40 backdrop-blur border border-white/10 rounded-xl text-white/50 hover:text-white transition-all hover:bg-white/10"
             >
-              <Info className="w-5 h-5" />
+              <Info className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Right Side: Voice Selector */}
-        <div className="absolute top-10 right-4 z-50 flex flex-col gap-4 items-end pointer-events-auto">
-          <div className="relative">
-            <button
-              onClick={() => setIsVoiceMenuOpen(!isVoiceMenuOpen)}
-              className="flex items-center gap-3 bg-black/40 backdrop-blur-2xl border border-white/10 p-2 pl-4 rounded-2xl shadow-2xl transition-all hover:bg-black/60 hover:border-cyan-500/30 group"
-            >
-              <div className="flex flex-col items-end">
-                <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest">Active Neural Voice</span>
-                <span className="text-xs font-bold text-cyan-300">{selectedVoice.name}</span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center border border-cyan-500/20 group-hover:border-cyan-500/50 transition-all">
-                <Music className={`w-5 h-5 text-cyan-400 transition-transform duration-500 ${isVoiceMenuOpen ? 'rotate-180' : ''}`} />
-              </div>
-            </button>
-            <AnimatePresence>
-              {isVoiceMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute top-full right-0 mt-2 w-64 z-[100]"
-                >
-                  <div className="bg-zinc-900/95 backdrop-blur-3xl border border-white/10 rounded-2xl p-2 shadow-2xl overflow-hidden max-h-80 overflow-y-auto custom-scrollbar">
-                    {voices.map((v) => (
-                      <button
-                        key={v.id}
-                        onClick={() => {
-                          setSelectedVoice(v);
-                          setIsVoiceMenuOpen(false);
-                          setInfoMsg(`Voice changed to ${v.name}`);
-                          playHoverSound();
-                          speak("Hi, how are you?", v.id);
-                          setTimeout(() => setInfoMsg(null), 2000);
-                        }}
-                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all mb-1 last:mb-0 ${selectedVoice.id === v.id
-                          ? 'bg-cyan-500/20 text-cyan-300'
-                          : 'text-white/60 hover:bg-white/5 hover:text-white'
-                          }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-1.5 h-1.5 rounded-full ${selectedVoice.id === v.id ? 'bg-cyan-400 animate-pulse' : 'bg-transparent'}`} />
-                          <span className="text-xs font-semibold">{v.name}</span>
-                        </div>
-                        <Volume2 className={`w-3 h-3 ${selectedVoice.id === v.id ? 'opacity-100' : 'opacity-20'}`} />
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+        {/* Voice selector is now in the top nav bar above — removed from here */}
 
         {/* ══ BOTTOM: 3-column layout (left=user, center=controls, right=AI) ══ */}
         <div className="w-full flex flex-row gap-3 items-end pb-2 pointer-events-auto">
@@ -3983,72 +3989,97 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
                   </button>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {/* Category Switcher */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setFeedbackCategory('bug')}
-                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${feedbackCategory === 'bug'
-                        ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
-                        : 'bg-white/5 border-white/5 text-white/50 hover:text-white'
-                        }`}
-                    >
-                      <Bug className="w-3.5 h-3.5" /> Bug / Error Report
-                    </button>
-                    <button
-                      onClick={() => setFeedbackCategory('suggestion')}
-                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${feedbackCategory === 'suggestion'
-                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.2)]'
-                        : 'bg-white/5 border-white/5 text-white/50 hover:text-white'
-                        }`}
-                    >
-                      <Sparkles className="w-3.5 h-3.5" /> Suggestion / Feature
-                    </button>
-                  </div>
+                <div className="space-y-5">
 
-                  {/* Text Input */}
-                  <textarea
-                    rows={4}
-                    placeholder={feedbackCategory === 'bug'
-                      ? "Describe what happened, what went wrong, or paste error text..."
-                      : "Describe your feature idea or feedback..."
-                    }
-                    value={feedbackText}
-                    onChange={(e) => setFeedbackText(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-xs text-white placeholder:text-white/30 outline-none focus:border-cyan-500/50 transition-all custom-scrollbar resize-none"
-                  />
-
-                  {/* Diagnostic telemetry snapshot */}
-                  <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-[10px] space-y-1 text-white/40 font-mono">
-                    <div className="flex justify-between">
-                      <span>Status / Mode:</span>
-                      <span className="text-cyan-400 font-bold">{isInterviewActive ? `Interviewing (${interviewCompany})` : 'Chat Mode'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Emotion:</span>
-                      <span className="text-purple-400 capitalize font-bold">{consoleState.emotion}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Voice:</span>
-                      <span className="text-white/60">{selectedVoice.name}</span>
+                  {/* ── Step 1: Category ── */}
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-2">① What type of report?</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setFeedbackCategory('bug')}
+                        className={`flex-1 py-3 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                          feedbackCategory === 'bug'
+                            ? 'bg-rose-500/25 border-rose-400/60 text-rose-200 shadow-[0_0_20px_rgba(244,63,94,0.25)]'
+                            : 'bg-white/[0.03] border-white/10 text-white/40 hover:text-white/80 hover:bg-white/5'
+                        }`}
+                      >
+                        <Bug className="w-3.5 h-3.5" />
+                        <span>Bug / Error</span>
+                      </button>
+                      <button
+                        onClick={() => setFeedbackCategory('suggestion')}
+                        className={`flex-1 py-3 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                          feedbackCategory === 'suggestion'
+                            ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.25)]'
+                            : 'bg-white/[0.03] border-white/10 text-white/40 hover:text-white/80 hover:bg-white/5'
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Feature / Idea</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex flex-col gap-2 pt-2">
+                  {/* ── Step 2: Description ── */}
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-2">② Describe the issue clearly</p>
+                    <textarea
+                      rows={5}
+                      placeholder={feedbackCategory === 'bug'
+                        ? "What happened? What did you expect? Paste any error text here..."
+                        : "What feature would you like? How would it help?"
+                      }
+                      value={feedbackText}
+                      onChange={(e) => setFeedbackText(e.target.value)}
+                      className="w-full bg-white/[0.04] border border-white/15 rounded-2xl p-4 text-xs text-white placeholder:text-white/25 outline-none focus:border-cyan-400/50 focus:bg-white/[0.06] transition-all custom-scrollbar resize-none leading-relaxed"
+                    />
+                    {feedbackText.trim() && (
+                      <p className="text-[9px] text-white/30 mt-1 text-right">{feedbackText.length} chars</p>
+                    )}
+                  </div>
+
+                  {/* ── Step 3: Telemetry ── */}
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-2">③ Auto-captured diagnostics</p>
+                    <div className="p-3 rounded-xl bg-black/50 border border-white/8 text-[10px] font-mono divide-y divide-white/5">
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-white/35">Mode</span>
+                        <span className="text-cyan-400 font-bold">{isInterviewActive ? `Interview · ${interviewCompany}` : 'Free Chat'}</span>
+                      </div>
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-white/35">Emotion</span>
+                        <span className="text-purple-300 capitalize font-bold">{consoleState.emotion}</span>
+                      </div>
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-white/35">Voice</span>
+                        <span className="text-white/60">{selectedVoice.name}</span>
+                      </div>
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-white/35">Browser</span>
+                        <span className="text-white/40 truncate max-w-[180px]">{navigator.userAgent.split(' ').slice(-1)[0]}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Actions ── */}
+                  <div className="flex flex-col gap-2 pt-1">
                     <button
                       onClick={() => {
-                        const title = encodeURIComponent(feedbackCategory === 'bug' ? `[Bug]: ${feedbackText.slice(0, 60) || 'Issue in Application'}` : `[Feedback]: ${feedbackText.slice(0, 60)}`);
-                        const body = encodeURIComponent(`### 📝 Description\n${feedbackText || 'No description provided.'}\n\n### 🔍 Runtime Diagnostics\n- **Category**: ${feedbackCategory}\n- **Mode**: ${isInterviewActive ? `Interview (${interviewCompany} - ${interviewRole || 'General'})` : 'Free Chat'}\n- **Candidate Emotion**: ${consoleState.emotion}\n- **Voice Profile**: ${selectedVoice.name}\n- **Browser**: ${navigator.userAgent}\n- **Timestamp**: ${new Date().toISOString()}`);
+                        const title = encodeURIComponent(feedbackCategory === 'bug'
+                          ? `[Bug]: ${feedbackText.slice(0, 60) || 'Issue in Application'}`
+                          : `[Feature]: ${feedbackText.slice(0, 60)}`);
+                        const body = encodeURIComponent(
+                          `### 📝 Description\n${feedbackText || 'No description provided.'}\n\n### 🔍 Runtime Diagnostics\n- **Category**: ${feedbackCategory}\n- **Mode**: ${isInterviewActive ? `Interview (${interviewCompany} - ${interviewRole || 'General'})` : 'Free Chat'}\n- **Emotion**: ${consoleState.emotion}\n- **Voice**: ${selectedVoice.name}\n- **Browser**: ${navigator.userAgent}\n- **Time**: ${new Date().toISOString()}`
+                        );
                         const url = `https://github.com/jama7777/Professional_friend/issues/new?title=${title}&body=${body}&labels=${feedbackCategory === 'bug' ? 'bug,auto-fix' : 'enhancement'}`;
                         window.open(url, '_blank');
                         setFeedbackSubmittedMsg(true);
                       }}
                       disabled={!feedbackText.trim()}
-                      className="w-full py-3 bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white rounded-2xl font-bold text-xs shadow-lg transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                      className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 disabled:from-zinc-700 disabled:to-zinc-700 text-white disabled:text-white/30 rounded-2xl font-bold text-xs shadow-[0_4px_20px_rgba(244,63,94,0.3)] hover:shadow-[0_4px_30px_rgba(244,63,94,0.5)] transition-all disabled:shadow-none flex items-center justify-center gap-2"
                     >
                       <Bug className="w-4 h-4" />
-                      <span>Dispatch Issue to GitHub Auto-Fix Agent</span>
+                      <span>{feedbackText.trim() ? 'Open GitHub Issue + Auto-Fix Agent' : 'Enter a description to continue'}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -4065,9 +4096,9 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
                         setFeedbackSubmittedMsg(true);
                       }}
                       disabled={!feedbackText.trim()}
-                      className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-30"
+                      className="w-full py-2.5 bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-white/20 text-white/50 hover:text-white/80 rounded-xl text-xs font-semibold transition-all disabled:opacity-25"
                     >
-                      Save Locally Only
+                      Save Locally Only (no GitHub)
                     </button>
                   </div>
                 </div>
