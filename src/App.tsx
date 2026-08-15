@@ -1426,23 +1426,80 @@ export default function App() {
   };
 
   const currentAudioIdRef = useRef<number>(0);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const currentSpeechTurnRef = useRef<number>(0);
+
+  // ─── Instant Speech Cancellation — halts previous audio, clears queue & resets blendshapes ───
+  const stopSpeaking = () => {
+    // 1. Advance turn counter to invalidate any pending in-flight TTS fetches / queue resolutions
+    currentSpeechTurnRef.current += 1;
+
+    // 2. Stop and disconnect the currently playing Web Audio source immediately
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop(0);
+        currentSourceRef.current.disconnect();
+      } catch (e) { }
+      currentSourceRef.current = null;
+    }
+
+    // 3. Clear blendshape animation frames and active audio ID
+    a2fAnimRef.current = null;
+    currentAudioIdRef.current = 0;
+
+    // 4. Reset the speech queue promise so pending sentences are dropped
+    speakQueueRef.current = Promise.resolve();
+
+    // 5. Cancel native browser SpeechSynthesis if active
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (e) { }
+    }
+
+    setStatus('Active');
+  };
 
   // ─── Internal helper: play ArrayBuffer audio through the lip-sync analyser chain ───
-  const playAudioBuffer = async (arrayBuffer: ArrayBuffer): Promise<{ startTime: number, audioId: number, done: Promise<void> }> => {
+  const playAudioBuffer = async (arrayBuffer: ArrayBuffer, turnId?: number): Promise<{ startTime: number, audioId: number, done: Promise<void> }> => {
     if (!playerRef.current) return { startTime: 0, audioId: 0, done: Promise.resolve() };
+
+    // Discard audio if turn has been invalidated by a newer response
+    if (turnId !== undefined && turnId !== currentSpeechTurnRef.current) {
+      return { startTime: 0, audioId: 0, done: Promise.resolve() };
+    }
+
     if (playerRef.current.audioContext.state === 'suspended') {
       await playerRef.current.audioContext.resume();
     }
+
+    // Stop any existing playing source before starting new one
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop(0);
+        currentSourceRef.current.disconnect();
+      } catch (e) { }
+      currentSourceRef.current = null;
+    }
+
     const audioBuffer = await playerRef.current.audioContext.decodeAudioData(arrayBuffer.slice(0));
+
+    // Double check turn validity after async decodeAudioData
+    if (turnId !== undefined && turnId !== currentSpeechTurnRef.current) {
+      return { startTime: 0, audioId: 0, done: Promise.resolve() };
+    }
+
     const source = playerRef.current.audioContext.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(playerRef.current.analyser);
+    currentSourceRef.current = source;
 
     const audioId = Date.now() + Math.random();
     currentAudioIdRef.current = audioId;
 
     const done = new Promise<void>(resolve => {
       source.onended = () => {
+        if (currentSourceRef.current === source) {
+          currentSourceRef.current = null;
+        }
         setStatus('Active');
         if (currentAudioIdRef.current === audioId) a2fAnimRef.current = null;
         resolve();
@@ -1566,7 +1623,6 @@ export default function App() {
       }
 
       // ── VALIDATION: Check if A2F returned a flatline (all zeros) ──
-      // This happens if NVIDIA silently rejects the audio format (e.g. mp3 instead of wav)
       let hasMovement = false;
       for (const frame of frames) {
         for (const val of frame) {
@@ -1596,9 +1652,12 @@ export default function App() {
   const speakQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   // ─── Deepgram TTS (primary) — NVIDIA Audio2Face runs in parallel for blendshapes ───
-  const speak = async (text: string, overrideVoiceId?: string): Promise<void> => {
+  const speak = async (text: string, overrideVoiceId?: string, turnId?: number): Promise<void> => {
     initAudio();
     if (!isAudioEnabled) return;
+
+    const thisTurn = turnId !== undefined ? turnId : currentSpeechTurnRef.current;
+    if (thisTurn !== currentSpeechTurnRef.current) return;
 
     if (!playerRef.current) playerRef.current = new PCMPlayer(44100);
     if (playerRef.current.audioContext.state === 'suspended') {
@@ -1618,16 +1677,20 @@ export default function App() {
         headers: { 'Authorization': `Token ${deepgramKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: cleanText })
       });
+
+      // Abort if turn changed while network request was running
+      if (thisTurn !== currentSpeechTurnRef.current) return;
       if (!response.ok) throw new Error(`Deepgram ${response.status}`);
 
       const buf = await response.arrayBuffer();
+      if (thisTurn !== currentSpeechTurnRef.current) return;
 
-      const { startTime: exactStartTime, audioId, done } = await playAudioBuffer(buf.slice(0));
+      const { startTime: exactStartTime, audioId, done } = await playAudioBuffer(buf.slice(0), thisTurn);
       setStatus('Active');
       console.log(`✅ Deepgram TTS playing (Audio time: ${exactStartTime.toFixed(3)}s)`);
 
       runNvidiaAudio2Face(buf.slice(0)).then(a2fData => {
-        if (a2fData && currentAudioIdRef.current === audioId) {
+        if (a2fData && currentAudioIdRef.current === audioId && thisTurn === currentSpeechTurnRef.current) {
           a2fAnimRef.current = { frames: a2fData.frames, fps: a2fData.fps, startTime: exactStartTime };
           console.log('✅ NVIDIA A2F blendshapes synchronized!');
         }
@@ -1641,25 +1704,28 @@ export default function App() {
     }
   };
 
-  // Enqueue a sentence — plays immediately after the previous one finishes
-  const speakQueued = (text: string) => {
+  // Enqueue a sentence — plays immediately after the previous one finishes (checked against turnId)
+  const speakQueued = (text: string, turnId?: number) => {
+    const thisTurn = turnId !== undefined ? turnId : currentSpeechTurnRef.current;
     speakQueueRef.current = speakQueueRef.current
-      .then(() => speak(text))
+      .then(() => {
+        if (thisTurn === currentSpeechTurnRef.current) {
+          return speak(text, undefined, thisTurn);
+        }
+      })
       .catch(() => { });
   };
-
-
-
-
 
   // Trigger Interview Start
   useEffect(() => {
     if (isInterviewActive) {
+      stopSpeaking();
       if (chairRef.current) chairRef.current.visible = true;
       const welcome = `Welcome to your ${interviewCompany} Technical Interview. I'm your interviewer today. Before we begin, which specific role are you applying for at ${interviewCompany}? (e.g., Software Engineer, Product Manager, Data Scientist)`;
       setChatMessages([{ role: 'assistant', content: welcome }]);
-      speak(welcome);
+      speak(welcome, undefined, currentSpeechTurnRef.current);
     } else if (!isInterviewMode) {
+      stopSpeaking();
       if (chairRef.current) chairRef.current.visible = false;
       setIsInterviewActive(false);
       setInterviewRole('');
@@ -1736,6 +1802,10 @@ Format: numbered list only, no extra commentary. Include the likely source in br
     setChatMessages(prev => [...prev, { role: 'user', content: userMsg }]);
     setIsChatLoading(true);
 
+    // Stop and discard any previous speech/sentences immediately
+    stopSpeaking();
+    const thisTurn = currentSpeechTurnRef.current;
+
     // First reply in interview = role declaration → fetch real questions immediately
     if (isInterviewActive && !interviewRole) {
       setInterviewRole(userMsg.trim());
@@ -1808,8 +1878,8 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
         const flushGeminiSentence = (s: string) => {
           const trimmed = s.trim();
           if (!trimmed) return;
-          if (geminiFirst) { speakQueueRef.current = Promise.resolve(); geminiFirst = false; }
-          speakQueued(trimmed);
+          if (thisTurn !== currentSpeechTurnRef.current) return;
+          speakQueued(trimmed, thisTurn);
         };
 
         // Stream tokens and collect text
@@ -2022,8 +2092,8 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
       const flushSentence = (s: string) => {
         const trimmed = s.trim();
         if (!trimmed) return;
-        if (firstSentence) { speakQueueRef.current = Promise.resolve(); firstSentence = false; }
-        speakQueued(trimmed);
+        if (thisTurn !== currentSpeechTurnRef.current) return;
+        speakQueued(trimmed, thisTurn);
       };
 
       for (const word of words) {
@@ -2066,6 +2136,9 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
   }, [chatMessages]);
 
   const startRecording = async () => {
+    // Immediately stop avatar speech when candidate starts talking
+    stopSpeaking();
+
     if (isRecordingRef.current || isStartingRecordingRef.current) return;
     isStartingRecordingRef.current = true;
     shouldStopRecordingRef.current = false;
