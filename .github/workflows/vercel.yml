@@ -1,0 +1,58 @@
+name: 🚀 Deploy to Vercel
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  deployments: write
+
+concurrency:
+  group: vercel-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm ci
+
+      - name: 🧪 Typecheck & Build Test
+        run: |
+          npm run lint
+          npm run build
+        env:
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY || secrets.GEMINI_API_KEY }}
+          VITE_MISTRAL_API_KEY: ${{ secrets.VITE_MISTRAL_API_KEY || secrets.MISTRAL_API_KEY }}
+          VITE_DEEPGRAM_API_KEY: ${{ secrets.VITE_DEEPGRAM_API_KEY }}
+          VITE_CONVAI_API_KEY: ${{ secrets.VITE_CONVAI_API_KEY }}
+          VITE_CONVAI_CHARACTER_ID: ${{ secrets.VITE_CONVAI_CHARACTER_ID }}
+
+      # If Vercel secrets are set in GitHub Secrets, trigger automated CLI deployment
+      - name: 🚀 Deploy to Vercel (Production if on main, Preview if on PR)
+        if: env.VERCEL_TOKEN != ''
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: ${{ github.ref == 'refs/heads/main' && '--prod' || '' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-comment: true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
