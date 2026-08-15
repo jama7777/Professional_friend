@@ -6,6 +6,7 @@ import { defineConfig, loadEnv } from 'vite';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
+    base: './',
     plugins: [react(), tailwindcss()],
     envPrefix: ['VITE_', 'GEMINI_', 'MISTRAL_', 'DEEPGRAM_', 'CARTESIA_', 'NV_', 'CONVAI_', 'TAVILY_'],
     define: {
