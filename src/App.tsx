@@ -485,7 +485,15 @@ const CHAT_ANIMATIONS = [
 const INTERVIEW_SIT_ANIM = getAssetUrl('models/animations/Sitting_interview_position@1.fbx');
 
 // --- Avatar Viewer Component (Full 3D Scene + Office + Chair + Animations) ---
-const AvatarViewer = ({ isInterviewActive, chairRef, isUserTyping, status, playerRef, jawValueRef, a2fAnimRef }: {
+const AvatarViewer = ({
+  isInterviewActive,
+  chairRef,
+  isUserTyping,
+  status,
+  playerRef,
+  jawValueRef,
+  a2fAnimRef
+}: {
   isInterviewActive: boolean,
   chairRef: React.MutableRefObject<THREE.Group | null>,
   isUserTyping: boolean,
@@ -1711,7 +1719,7 @@ export default function App() {
       await playerRef.current.audioContext.resume();
     }
 
-    const cleanText = text.replace(/[*#`_\[\]()]/g, '').trim();
+    const cleanText = text.replace(/[*#`_[\]()]/g, '').trim();
     if (!cleanText) return;
 
     const deepgramKey = import.meta.env.VITE_DEEPGRAM_API_KEY || 'cc5418f9c4e826cd804f12605f5f93879eecd058';
@@ -1877,15 +1885,7 @@ export default function App() {
 
     const companyLower = company.toLowerCase().replace(/\s+/g, '');
 
-    const searchPrompt = `Compile real interview questions for a ${role} role at ${company}. Base your answer on well-known sources like Glassdoor, Blind, Reddit (r/cscareerquestions), LeetCode Discuss, and the company engineering blog.
-
-List exactly 15 realistic questions categorised by type:
-- 3-4 Technical/coding questions
-- 3-4 System design questions
-- 3-4 Behavioral/HR questions (STAR format)
-- 2-3 Role-specific domain questions for ${role}
-
-Format: numbered list only, no extra commentary. Include the likely source in brackets after each question, e.g. [Glassdoor], [Blind], [Reddit], [LeetCode].`;
+    const searchPrompt = `Compile real interview questions for a ${role} role at ${company}. Base your answer on well-known sources like Glassdoor, Blind, Reddit (r/cscareerquestions), LeetCode Discuss, and the company engineering blog.\n\nList exactly 15 realistic questions categorised by type:\n- 3-4 Technical/coding questions\n- 3-4 System design questions\n- 3-4 Behavioral/HR questions (STAR format)\n- 2-3 Role-specific domain questions for ${role}\n\nFormat: numbered list only, no extra commentary. Include the likely source in brackets after each question, e.g. [Glassdoor], [Blind], [Reddit], [LeetCode].`;
 
     const abortCtrl = new AbortController();
     const abortTimer = setTimeout(() => abortCtrl.abort(), 30000); // 30s timeout
@@ -2519,7 +2519,7 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
   };
 
   const transcribeAudio = async (blob: Blob) => {
-    const dgKey = import.meta.env.VITE_DEEPGRAM_API_KEY;
+    const dgKey = import.meta.env.VITE_DEEPGRAM_API_KEY || 'cc5418f9c4e826cd804f12605f5f93879eecd058';
     const groqKey = import.meta.env.VITE_GROQ_API_KEY;
 
     if (!dgKey && !groqKey) {
