@@ -1,6 +1,6 @@
 import React, { Component, useEffect, useRef, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Camera, Square, Play, Music, Loader2, AlertCircle, Key, Activity, Cpu, ScanFace, Info, X, Send, MessageSquare, User, Bot, Mic, MicOff, Volume2, VolumeX, ChevronDown, Globe, Award, BarChart3, ShieldAlert, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Camera, Square, Play, Music, Loader2, AlertCircle, Key, Activity, Cpu, ScanFace, Info, X, Send, MessageSquare, User, Bot, Mic, MicOff, Volume2, VolumeX, ChevronDown, Globe, Award, BarChart3, ShieldAlert, Sparkles, CheckCircle2, Bug } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
@@ -1344,6 +1344,12 @@ export default function App() {
   const lastInterviewerQuestionRef = useRef<string>('');
   const sessionEmotionsRef = useRef<string[]>([]);
   const interviewStartTimeRef = useRef<number>(0);
+
+  // Feedback & Autonomous Bug Report State
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackCategory, setFeedbackCategory] = useState<'bug' | 'suggestion'>('bug');
+  const [feedbackSubmittedMsg, setFeedbackSubmittedMsg] = useState(false);
 
   useEffect(() => {
     getAllInterviewSessions().then(sessions => setSavedSessionCount(sessions.length)).catch(() => {});
@@ -3319,6 +3325,14 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
               )}
             </button>
             <button
+              onClick={() => { playHoverSound(); setIsFeedbackOpen(true); }}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-black/40 backdrop-blur border border-rose-500/30 rounded-xl text-rose-300 hover:text-white hover:bg-rose-500/20 hover:border-rose-500/50 transition-all shadow-lg text-xs font-bold"
+              title="Report Bug or Feedback (Triggers Autonomous AI Fixer)"
+            >
+              <Bug className="w-4 h-4 text-rose-400" />
+              <span className="hidden sm:inline">Report Issue</span>
+            </button>
+            <button
               onClick={() => setIsInfoOpen(true)}
               className="p-3 bg-black/40 backdrop-blur border border-white/10 rounded-xl text-white/50 hover:text-white transition-all hover:bg-white/10"
             >
@@ -3859,6 +3873,150 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
                   <p className="text-xs text-white/60">Click the <strong className="text-white">🎤 mic button</strong> to speak, or type in the chat bar. Toggle <strong className="text-cyan-400">Interview Mode</strong> to begin a structured technical interview.</p>
                 </div>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Feedback & Autonomous AI Auto-Fix Modal */}
+      <AnimatePresence>
+        {isFeedbackOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md pointer-events-auto"
+            onClick={() => setIsFeedbackOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-zinc-950 border border-white/15 p-6 max-w-lg w-full shadow-[0_0_60px_rgba(0,0,0,0.9)] max-h-[90vh] overflow-y-auto rounded-3xl space-y-4"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center">
+                    <Bug className="w-5 h-5 text-rose-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white tracking-tight">Report Bug / Feedback</h2>
+                    <p className="text-xs text-white/50">Triggers Autonomous Gemini Auto-Fix Agent on GitHub</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsFeedbackOpen(false)}
+                  className="p-2 border border-white/10 bg-white/5 hover:bg-white/10 text-white/50 hover:text-white rounded-xl transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {feedbackSubmittedMsg ? (
+                <div className="p-6 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-center space-y-2">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto animate-bounce" />
+                  <h3 className="text-sm font-bold text-emerald-300">Feedback Logged Successfully!</h3>
+                  <p className="text-xs text-emerald-100/70">
+                    Thank you! Your feedback has been stored and packaged for diagnostic analysis.
+                  </p>
+                  <button
+                    onClick={() => { setFeedbackSubmittedMsg(false); setIsFeedbackOpen(false); setFeedbackText(''); }}
+                    className="mt-2 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold rounded-xl transition-all"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Category Switcher */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setFeedbackCategory('bug')}
+                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${feedbackCategory === 'bug'
+                        ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
+                        : 'bg-white/5 border-white/5 text-white/50 hover:text-white'
+                        }`}
+                    >
+                      <Bug className="w-3.5 h-3.5" /> Bug / Error Report
+                    </button>
+                    <button
+                      onClick={() => setFeedbackCategory('suggestion')}
+                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${feedbackCategory === 'suggestion'
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.2)]'
+                        : 'bg-white/5 border-white/5 text-white/50 hover:text-white'
+                        }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Suggestion / Feature
+                    </button>
+                  </div>
+
+                  {/* Text Input */}
+                  <textarea
+                    rows={4}
+                    placeholder={feedbackCategory === 'bug'
+                      ? "Describe what happened, what went wrong, or paste error text..."
+                      : "Describe your feature idea or feedback..."
+                    }
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-xs text-white placeholder:text-white/30 outline-none focus:border-cyan-500/50 transition-all custom-scrollbar resize-none"
+                  />
+
+                  {/* Diagnostic telemetry snapshot */}
+                  <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-[10px] space-y-1 text-white/40 font-mono">
+                    <div className="flex justify-between">
+                      <span>Status / Mode:</span>
+                      <span className="text-cyan-400 font-bold">{isInterviewActive ? `Interviewing (${interviewCompany})` : 'Chat Mode'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Emotion:</span>
+                      <span className="text-purple-400 capitalize font-bold">{consoleState.emotion}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Voice:</span>
+                      <span className="text-white/60">{selectedVoice.name}</span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex flex-col gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        const title = encodeURIComponent(feedbackCategory === 'bug' ? `[Bug]: ${feedbackText.slice(0, 60) || 'Issue in Application'}` : `[Feedback]: ${feedbackText.slice(0, 60)}`);
+                        const body = encodeURIComponent(`### 📝 Description\n${feedbackText || 'No description provided.'}\n\n### 🔍 Runtime Diagnostics\n- **Category**: ${feedbackCategory}\n- **Mode**: ${isInterviewActive ? `Interview (${interviewCompany} - ${interviewRole || 'General'})` : 'Free Chat'}\n- **Candidate Emotion**: ${consoleState.emotion}\n- **Voice Profile**: ${selectedVoice.name}\n- **Browser**: ${navigator.userAgent}\n- **Timestamp**: ${new Date().toISOString()}`);
+                        const url = `https://github.com/jama7777/Professional_friend/issues/new?title=${title}&body=${body}&labels=${feedbackCategory === 'bug' ? 'bug,auto-fix' : 'enhancement'}`;
+                        window.open(url, '_blank');
+                        setFeedbackSubmittedMsg(true);
+                      }}
+                      disabled={!feedbackText.trim()}
+                      className="w-full py-3 bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white rounded-2xl font-bold text-xs shadow-lg transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <Bug className="w-4 h-4" />
+                      <span>Dispatch Issue to GitHub Auto-Fix Agent</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        try {
+                          const existing = JSON.parse(localStorage.getItem('pf_user_feedback') || '[]');
+                          existing.unshift({
+                            type: feedbackCategory,
+                            text: feedbackText,
+                            timestamp: Date.now(),
+                            state: { mode: isInterviewActive ? 'interview' : 'chat', company: interviewCompany }
+                          });
+                          localStorage.setItem('pf_user_feedback', JSON.stringify(existing.slice(0, 50)));
+                        } catch {}
+                        setFeedbackSubmittedMsg(true);
+                      }}
+                      disabled={!feedbackText.trim()}
+                      className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-30"
+                    >
+                      Save Locally Only
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
