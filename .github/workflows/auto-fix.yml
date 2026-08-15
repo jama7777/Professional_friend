@@ -18,20 +18,9 @@ permissions:
 
 jobs:
   auto-fix:
-    # Trigger when:
-    #   - a new issue is labeled 'bug' or 'auto-fix', or title starts with [Bug]/[bug]
-    #   - a comment on any issue contains '/fix'
+    # Trigger on any issue opened or labeled, or comment containing /fix
     if: |
-      (
-        github.event_name == 'issues' &&
-        (
-          contains(github.event.issue.labels.*.name, 'bug') ||
-          contains(github.event.issue.labels.*.name, 'auto-fix') ||
-          startsWith(github.event.issue.title, '[Bug]') ||
-          startsWith(github.event.issue.title, '[bug]') ||
-          startsWith(github.event.issue.title, '[Feature]')
-        )
-      ) ||
+      github.event_name == 'issues' ||
       (
         github.event_name == 'issue_comment' &&
         contains(github.event.comment.body, '/fix')

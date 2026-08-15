@@ -4079,7 +4079,7 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
                         const body = encodeURIComponent(
                           `### 📝 Description\n${feedbackText || 'No description provided.'}\n\n### 🔍 Runtime Diagnostics\n- **Category**: ${feedbackCategory}\n- **Mode**: ${isInterviewActive ? `Interview (${interviewCompany} - ${interviewRole || 'General'})` : 'Free Chat'}\n- **Emotion**: ${consoleState.emotion}\n- **Voice**: ${selectedVoice.name}\n- **Browser**: ${navigator.userAgent}\n- **Time**: ${new Date().toISOString()}`
                         );
-                        const url = `https://github.com/jama7777/Professional_friend/issues/new?title=${title}&body=${body}&labels=${feedbackCategory === 'bug' ? 'bug,auto-fix' : 'enhancement'}`;
+                        const url = `https://github.com/jama7777/Professional_friend/issues/new?title=${title}&body=${body}&labels=bug,auto-fix`;
                         window.open(url, '_blank');
                         setFeedbackSubmittedMsg(true);
                       }}
