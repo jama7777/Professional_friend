@@ -71,8 +71,8 @@ jobs:
           DIAGNOSIS=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).diagnosis)")
           COMMIT_MSG=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).commitMessage)")
 
-          # Skip if no code changes
-          if git diff --quiet src/ scripts/; then
+          # Skip if no code changes in entire repository
+          if git diff --quiet; then
             echo "ℹ️  No file changes — leaving diagnostic comment on the issue."
             gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Analysis Complete**
 
@@ -86,8 +86,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Stage verified fixes directly on main
-          git add src/ scripts/
+          # Stage all verified fixes in the repository
+          git add -A
           git commit -m "$COMMIT_MSG (fixes #${ISSUE_NUM})"
 
           # Pull rebase in case of concurrent commits, then push directly to main
