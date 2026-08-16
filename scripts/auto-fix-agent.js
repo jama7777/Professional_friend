@@ -1,14 +1,14 @@
 // Autonomous Auto-Fix Agent for Professional Friend
-// Multi-LLM Engine: Google Gemini with automatic Mistral fallback
+// Multi-Engine: GitHub Models (FREE via GITHUB_TOKEN) → Gemini → Mistral fallback
 
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import { GoogleGenAI } from '@google/genai';
 
 async function main() {
-  const geminiKey  = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-  const mistralKey = process.env.MISTRAL_API_KEY || process.env.VITE_MISTRAL_API_KEY || '5JcglJFMR52ixZlEoeVpcLqSlpvjV6BQ';
+  const githubToken = process.env.GITHUB_TOKEN;
+  const geminiKey   = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const mistralKey  = process.env.MISTRAL_API_KEY || process.env.VITE_MISTRAL_API_KEY || '5JcglJFMR52ixZlEoeVpcLqSlpvjV6BQ';
   const issueTitle  = process.env.ISSUE_TITLE  || 'Bug Report';
   const issueBody   = process.env.ISSUE_BODY   || 'No description provided';
   const issueNumber = process.env.ISSUE_NUMBER || 'test';
@@ -18,15 +18,22 @@ async function main() {
   console.log(`📝 Preview: ${issueBody.slice(0, 200)}...`);
 
   // ── 1. Gather source files ────────────────────────────────────────────────
-  const srcFiles = getSourceFiles('./src');
+  const srcFiles = [
+    ...getSourceFiles('./src'),
+    'vite.config.ts',
+    'vercel.json',
+    'package.json',
+    'tsconfig.json',
+  ].filter(f => fs.existsSync(f));
+
   console.log(`📂 Scanning ${srcFiles.length} source files...`);
 
   const fileContents = {};
   for (const f of srcFiles) {
     const stat = fs.statSync(f);
     if (stat.size > 350_000) {
-      console.log(`  ⚠️  Skipping ${f} (${Math.round(stat.size / 1024)}KB — file exceeds 350KB)`);
-      fileContents[f] = `// [FILE EXCLUDED FROM CONTEXT: ${f} (${Math.round(stat.size / 1024)}KB).]`;
+      console.log(`  ⚠️  Skipping ${f} (${Math.round(stat.size / 1024)}KB — too large)`);
+      fileContents[f] = `// [FILE EXCLUDED — ${Math.round(stat.size / 1024)}KB]`;
     } else {
       fileContents[f] = fs.readFileSync(f, 'utf8');
     }
@@ -36,32 +43,27 @@ async function main() {
   const systemPrompt = `You are a Principal Staff Software Engineer & Autonomous Code Repair Agent.
 Your job: accurately diagnose and fix the reported bug in this React/TypeScript/Vite repository.
 
-Tech stack & constraints:
+Tech stack:
 - React 19, TypeScript 5.8, Vite 6, Tailwind CSS 4
-- "motion": "^12.x" is installed. Correct import is: import { motion, AnimatePresence } from 'motion/react'; DO NOT change to 'framer-motion'.
-- Lucide React icons, Three.js, @google/genai, IndexedDB.
+- "motion": "^12.x" → import from 'motion/react' (NOT 'framer-motion')
+- Lucide React icons, Three.js, @google/genai, IndexedDB
+- Mistral API calls must use full URL: https://api.mistral.ai/v1/... (proxies cannot forward Authorization headers)
 
-Source files available:
+Source files:
 ${Object.keys(fileContents).map(f => `  - ${f}`).join('\n')}
 
 RULES:
-1. Analyze the issue title, error message, stack trace, and user description carefully.
-2. If this issue does NOT describe an actionable bug or test modification, return "fixedFiles": [] and explain why in "diagnosis".
-3. When providing a file fix in fixedFiles, provide the COMPLETE, FULL file replacement content with all imports, functions, and closing tags intact. Do NOT truncate.
-4. Only include files you actually modified in fixedFiles.
-5. The fixed code MUST pass: tsc --noEmit AND vite build with 0 errors.
+1. Analyze the issue carefully. If no actionable code fix is needed, return fixedFiles: [].
+2. Provide COMPLETE file content (no truncation, no placeholders).
+3. Only include files you actually modified.
+4. Code must pass: tsc --noEmit AND vite build.
 
-RESPONSE SCHEMA (output ONLY valid JSON matching this schema, no markdown code fences):
+OUTPUT: ONLY valid JSON matching this schema (no markdown fences):
 {
-  "diagnosis": "2-3 sentence root cause explanation referencing specific code.",
-  "fixedFiles": [
-    {
-      "filePath": "src/components/Example.tsx",
-      "content": "/* complete full file content */"
-    }
-  ],
-  "commitMessage": "fix: concise description of what was fixed",
-  "prDescription": "Markdown PR description explaining the bug and fix."
+  "diagnosis": "Root cause in 2-3 sentences.",
+  "fixedFiles": [{ "filePath": "src/...", "content": "complete file content" }],
+  "commitMessage": "fix: short description",
+  "prDescription": "PR body markdown"
 }`;
 
   const userPrompt = `Issue #${issueNumber}
@@ -74,30 +76,83 @@ ${Object.entries(fileContents)
   .map(([f, code]) => `=== ${f} ===\n${code}\n=== END ${f} ===`)
   .join('\n\n')}
 
-Analyze the issue and generate the JSON fix now.`;
+Analyze and generate the JSON fix.`;
 
-  // ── 3. Multi-Engine Query Helper ──────────────────────────────────────────
-  async function queryLLM(promptText) {
-    // Try Gemini first if key is present
-    if (geminiKey) {
-      try {
-        console.log('🧠 Querying Gemini (gemini-2.5-flash)...');
-        const client = new GoogleGenAI({ apiKey: geminiKey });
-        const response = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${promptText}` }] }],
-          config: { responseMimeType: 'application/json', temperature: 0.1 }
-        });
-        const text = typeof response.text === 'function' ? response.text() : (response.text ?? '');
-        if (text) return { text, engine: 'Gemini 2.5 Flash' };
-      } catch (err) {
-        console.warn(`⚠️  Gemini failed (${err.message.slice(0, 120)}). Falling back to Mistral...`);
+  // ── 3. Multi-Engine Query ─────────────────────────────────────────────────
+  async function queryLLM(promptText, buildError = '') {
+    const finalPrompt = buildError
+      ? `${promptText}\n\n⚠️ PREVIOUS BUILD ERROR:\n${buildError}\nFix ALL errors. Ensure complete JSX tags and valid TypeScript.`
+      : promptText;
+
+    // ── Engine 1: GitHub Models (FREE, no extra key needed) ────────────────
+    if (githubToken) {
+      const ghModels = [
+        { model: 'gpt-4o-mini', endpoint: 'https://models.inference.ai.azure.com/chat/completions' },
+        { model: 'deepseek-v3-0324', endpoint: 'https://models.inference.ai.azure.com/chat/completions' },
+        { model: 'Codestral-2501', endpoint: 'https://models.inference.ai.azure.com/chat/completions' },
+        { model: 'mistral-nemo', endpoint: 'https://models.inference.ai.azure.com/chat/completions' },
+      ];
+
+      for (const { model, endpoint } of ghModels) {
+        try {
+          console.log(`🧠 Querying GitHub Models (${model}) — FREE via GITHUB_TOKEN...`);
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${githubToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: finalPrompt },
+              ],
+              response_format: { type: 'json_object' },
+              temperature: 0.1,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.choices?.[0]?.message?.content ?? '';
+            if (text) {
+              console.log(`✅ Response from GitHub Models (${model})`);
+              return { text, engine: `GitHub Models (${model})` };
+            }
+          } else {
+            const errText = await res.text();
+            console.warn(`  ⚠️  GitHub Models ${model} returned ${res.status}: ${errText.slice(0, 120)}`);
+          }
+        } catch (err) {
+          console.warn(`  ⚠️  GitHub Models ${model} error: ${err.message}`);
+        }
       }
     }
 
-    // Fallback to Mistral
+    // ── Engine 2: Google Gemini (fallback) ─────────────────────────────────
+    if (geminiKey) {
+      try {
+        console.log('🧠 Falling back to Google Gemini...');
+        const { GoogleGenAI } = await import('@google/genai');
+        const client = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await client.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${finalPrompt}` }] }],
+          config: { responseMimeType: 'application/json', temperature: 0.1 },
+        });
+        const text = typeof response.text === 'function' ? response.text() : (response.text ?? '');
+        if (text) {
+          console.log('✅ Response from Google Gemini');
+          return { text, engine: 'Google Gemini 2.5 Flash' };
+        }
+      } catch (err) {
+        console.warn(`  ⚠️  Gemini failed: ${err.message.slice(0, 120)}`);
+      }
+    }
+
+    // ── Engine 3: Mistral (last resort) ────────────────────────────────────
     if (mistralKey) {
-      console.log('🧠 Querying Mistral Large...');
+      console.log('🧠 Falling back to Mistral Large...');
       const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${mistralKey}`, 'Content-Type': 'application/json' },
@@ -106,61 +161,54 @@ Analyze the issue and generate the JSON fix now.`;
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: promptText }
+            { role: 'user', content: finalPrompt },
           ],
-          temperature: 0.1
-        })
+          temperature: 0.1,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         const text = data.choices?.[0]?.message?.content ?? '';
+        console.log('✅ Response from Mistral Large');
         return { text, engine: 'Mistral Large' };
-      } else {
-        const errText = await res.text();
-        throw new Error(`Mistral API Error ${res.status}: ${errText.slice(0, 200)}`);
       }
+      const errText = await res.text();
+      throw new Error(`Mistral error ${res.status}: ${errText.slice(0, 200)}`);
     }
 
-    throw new Error('No working AI API key available (both Gemini and Mistral failed).');
+    throw new Error('No AI engine available. Set GITHUB_TOKEN (free), GEMINI_API_KEY, or MISTRAL_API_KEY.');
   }
 
-  // ── 4. Fix generation & verification loop ─────────────────────────────────
+  // ── 4. Fix generation + verification loop ─────────────────────────────────
   let lastBuildError = '';
-  const maxAttempts  = 2;
+  const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(`\n🧠 Auto-Fix Analysis — Attempt ${attempt}/${maxAttempts}...`);
-
-    const finalPrompt = lastBuildError
-      ? `${userPrompt}\n\n⚠️ PREVIOUS ATTEMPT BUILD ERROR:\n${lastBuildError}\nFix the code to eliminate this error and ensure valid TypeScript and complete JSX tags.`
-      : userPrompt;
+    console.log(`\n🔄 Attempt ${attempt}/${maxAttempts}...`);
 
     let responseData;
     try {
-      responseData = await queryLLM(finalPrompt);
-      console.log(`✅ Response received from ${responseData.engine}`);
+      responseData = await queryLLM(userPrompt, lastBuildError);
     } catch (err) {
-      console.error(`❌ AI generation failed on attempt ${attempt}:`, err.message);
-      lastBuildError = err.message;
-      await new Promise(r => setTimeout(r, 3000));
-      continue;
+      console.error(`❌ All AI engines failed: ${err.message}`);
+      break;
     }
 
     const fixData = cleanAndParseJSON(responseData.text);
 
     if (!fixData || !Array.isArray(fixData.fixedFiles)) {
-      console.warn('⚠️  Invalid or empty JSON response from model.');
-      lastBuildError = 'Response was not valid JSON with a fixedFiles array. Return ONLY the JSON object.';
+      console.warn('⚠️  Invalid JSON response from model.');
+      lastBuildError = 'Return ONLY valid JSON with a fixedFiles array.';
       continue;
     }
 
     if (fixData.fixedFiles.length === 0) {
-      console.log('ℹ️  AI analyzed the issue and determined no code changes are required.');
+      console.log('ℹ️  No code changes needed.');
       console.log(`   Diagnosis: ${fixData.diagnosis}`);
       fs.writeFileSync('auto-fix-summary.json', JSON.stringify({
         diagnosis: fixData.diagnosis || 'No code changes required.',
         commitMessage: `chore: analysis of issue #${issueNumber} — no code changes needed`,
-        prDescription: `No code changes were generated.\n\n**Analysis**: ${fixData.diagnosis}`,
+        prDescription: `No changes needed.\n\n**Analysis**: ${fixData.diagnosis}`,
         fixedFilesCount: 0,
         noChanges: true,
       }, null, 2));
@@ -168,18 +216,17 @@ Analyze the issue and generate the JSON fix now.`;
     }
 
     console.log(`🔍 Diagnosis: ${fixData.diagnosis}`);
-    console.log(`📝 Applying ${fixData.fixedFiles.length} file fix(es)...`);
+    console.log(`📝 Applying ${fixData.fixedFiles.length} file fix(es) via ${responseData.engine}...`);
 
-    // Apply fixes
     for (const fileFix of fixData.fixedFiles) {
       const targetPath = path.resolve(fileFix.filePath);
       if (!fileFix.content || typeof fileFix.content !== 'string') {
-        console.warn(`  ⚠️  Skipping ${fileFix.filePath} — no content provided`);
+        console.warn(`  ⚠️  Skipping ${fileFix.filePath} — no content`);
         continue;
       }
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
       fs.writeFileSync(targetPath, fileFix.content, 'utf8');
-      console.log(`  ✅ Applied fix → ${fileFix.filePath}`);
+      console.log(`  ✅ Applied → ${fileFix.filePath}`);
     }
 
     // Verify
@@ -193,13 +240,14 @@ Analyze the issue and generate the JSON fix now.`;
       console.log('  ✅ Build: passed');
 
       fs.writeFileSync('auto-fix-summary.json', JSON.stringify({
-        diagnosis:       fixData.diagnosis,
-        commitMessage:   fixData.commitMessage || `fix: auto-resolve issue #${issueNumber}`,
-        prDescription:   fixData.prDescription || `Autonomous fix for issue #${issueNumber}\n\n**Diagnosis**: ${fixData.diagnosis}`,
+        diagnosis: fixData.diagnosis,
+        commitMessage: fixData.commitMessage || `fix: auto-resolve issue #${issueNumber}`,
+        prDescription: fixData.prDescription || `Autonomous fix for #${issueNumber}.\n\n**Diagnosis**: ${fixData.diagnosis}`,
         fixedFilesCount: fixData.fixedFiles.length,
+        engine: responseData.engine,
       }, null, 2));
 
-      console.log(`\n🎉 Auto-fix complete! Summary saved to auto-fix-summary.json`);
+      console.log(`\n🎉 Auto-fix complete via ${responseData.engine}!`);
       return;
 
     } catch (buildErr) {
@@ -209,24 +257,20 @@ Analyze the issue and generate the JSON fix now.`;
         buildErr.message ?? '',
       ].join('\n');
 
-      console.warn(`❌ Verification failed on attempt ${attempt}:`);
+      console.warn(`❌ Build failed on attempt ${attempt}:`);
       console.warn(errOut.slice(0, 800));
       lastBuildError = errOut.slice(0, 1200);
 
-      // Revert dirty files so repo stays clean
-      try {
-        execSync('git checkout -- .', { stdio: 'ignore' });
-      } catch {}
-
-      await new Promise(r => setTimeout(r, 4000));
+      try { execSync('git checkout -- .', { stdio: 'ignore' }); } catch {}
+      await new Promise(r => setTimeout(r, 3000));
     }
   }
 
-  console.warn(`⚠️ Agent finished without a verified build. Leaving diagnostic comment.`);
+  console.warn('⚠️ All attempts exhausted — leaving diagnostic comment.');
   fs.writeFileSync('auto-fix-summary.json', JSON.stringify({
-    diagnosis: `The AI analyzed the issue but the proposed fix failed automated verification (${lastBuildError.slice(0, 250)}...).`,
-    commitMessage: `chore: unverified auto-fix attempt for issue #${issueNumber}`,
-    prDescription: `Could not verify automated fix.`,
+    diagnosis: `Fix attempts exhausted. Last build error: ${lastBuildError.slice(0, 250)}`,
+    commitMessage: `chore: unverified fix attempt for #${issueNumber}`,
+    prDescription: 'Fix could not be verified.',
     fixedFilesCount: 0,
     noChanges: true,
   }, null, 2));
@@ -239,11 +283,8 @@ function getSourceFiles(dir) {
   if (!fs.existsSync(dir)) return results;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...getSourceFiles(fullPath));
-    } else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) {
-      results.push(fullPath);
-    }
+    if (entry.isDirectory()) results.push(...getSourceFiles(fullPath));
+    else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) results.push(fullPath);
   }
   return results;
 }
@@ -251,22 +292,15 @@ function getSourceFiles(dir) {
 function cleanAndParseJSON(raw) {
   if (!raw || typeof raw !== 'string') return null;
   try {
-    const cleaned = raw
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim();
-    return JSON.parse(cleaned);
+    return JSON.parse(raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim());
   } catch {
     const match = raw.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { return JSON.parse(match[0]); } catch {}
-    }
+    if (match) { try { return JSON.parse(match[0]); } catch {} }
     return null;
   }
 }
 
 main().catch(err => {
-  console.error('💥 Fatal Auto-Fix Agent Error:', err.message || err);
+  console.error('💥 Fatal error:', err.message || err);
   process.exit(1);
 });

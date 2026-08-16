@@ -35,17 +35,21 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: ⚙️ Set up Node.js 20
+      - name: ⚙️ Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 📦 Install Dependencies
         run: npm ci
 
-      - name: 🧠 Run Autonomous Multi-LLM Auto-Fix Agent
+      - name: 🧠 Run Autonomous Auto-Fix Agent (GitHub Models FREE + Gemini/Mistral fallback)
         env:
+          # 🆓 Primary engine: GitHub Models API — FREE, uses built-in GITHUB_TOKEN, no extra keys needed
+          # Provides: GPT-4o mini, DeepSeek-v3, Codestral, Mistral-Nemo and more
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 🔑 Fallback engines (optional — agent works without these via GitHub Models)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY || secrets.VITE_MISTRAL_API_KEY }}
