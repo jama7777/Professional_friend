@@ -2,14 +2,13 @@ name: 🤖 Autonomous AI Bug Fixer
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [opened, reopened]
   issue_comment:
     types: [created]
 
-# Prevent duplicate parallel runs on the same issue
 concurrency:
   group: auto-fix-${{ github.event.issue.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -18,18 +17,15 @@ permissions:
 
 jobs:
   auto-fix:
-    # Trigger on any issue opened or labeled, or comment containing /fix
+    name: auto-fix
     if: |
-      github.event_name == 'issues' ||
-      (
-        github.event_name == 'issue_comment' &&
-        contains(github.event.comment.body, '/fix')
-      )
-
+      (github.event_name == 'issues') ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/fix'))
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: 📥 Checkout Repository
+      - name: 📥 Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
@@ -70,9 +66,9 @@ jobs:
 
           DIAGNOSIS=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).diagnosis)")
           COMMIT_MSG=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).commitMessage)")
+          NO_CHANGES=$(node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('auto-fix-summary.json')).noChanges || false))")
 
-          # Skip if no code changes in entire repository
-          if git diff --quiet; then
+          if [ "$NO_CHANGES" = "true" ] || (git diff --quiet && git diff --staged --quiet); then
             echo "ℹ️  No file changes — leaving diagnostic comment on the issue."
             gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Analysis Complete**
 
@@ -86,17 +82,34 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Stage all verified fixes in the repository
+          # Stash changes → pull latest main → pop stash → commit → push with retry
+          # This avoids "could not apply" conflicts when multiple runs execute concurrently
           git add -A
+          git stash push -u -m "auto-fix-stash-${ISSUE_NUM}" || true
+          git pull --rebase origin main || true
+          git stash pop || true
+          git add -A
+
+          if git diff --staged --quiet; then
+            echo "ℹ️  Changes already applied by another run — no commit needed."
+            gh issue comment "$ISSUE_NUM" --body "🤖 Fix already applied by a concurrent run."
+            exit 0
+          fi
+
           git commit -m "$COMMIT_MSG (fixes #${ISSUE_NUM})"
 
-          # Pull rebase in case of concurrent commits, then push directly to main
-          git pull --rebase origin main
-          git push origin main
+          # Push with up to 3 retries for concurrent push races
+          for i in 1 2 3; do
+            if git push origin main; then
+              echo "✅ Pushed on attempt $i"
+              break
+            fi
+            echo "⚠️  Push attempt $i failed — rebasing and retrying..."
+            git pull --rebase origin main
+          done
 
           COMMIT_SHA=$(git rev-parse --short HEAD)
 
-          # Comment and close the issue
           gh issue comment "$ISSUE_NUM" --body "🤖 **Autonomous AI Fix Applied Directly to \`main\`!**
 
           A verified fix was automatically tested and pushed directly to the **\`main\`** branch.
