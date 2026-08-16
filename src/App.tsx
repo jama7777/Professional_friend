@@ -1892,7 +1892,8 @@ export default function App() {
 
     try {
       console.log('[Mistral] Fetching real interview questions...');
-      const res = await fetch('/api/mistral/v1/chat/completions', {
+      // Direct Mistral API call — Vercel/Vite proxies cannot forward Authorization headers
+      const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
         signal: abortCtrl.signal,
         headers: {
@@ -2204,9 +2205,10 @@ Company: ${interviewCompany} | Role: ${role} | Turn: ${chatMessages.length}`;
 
       console.log('[Mistral] Sending chat request...');
       // Use system + user split to avoid single-message bloat
+      // Direct Mistral API call — Vercel/Vite proxies cannot forward Authorization headers
       let response: Response;
       try {
-        response = await fetch('/api/mistral/v1/chat/completions', {
+        response = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST',
           signal: abortCtrl2.signal,
           headers: {
