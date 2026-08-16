@@ -10,8 +10,40 @@ interface SpeechRecognitionErrorEvent extends Event {
   message: string;
 }
 
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionEventMap {
+  "audioend": Event;
+  "audiostart": Event;
+  "end": Event;
+  "error": SpeechRecognitionErrorEvent;
+  "nomatch": SpeechRecognitionEvent;
+  "result": SpeechRecognitionEvent;
+  "soundend": Event;
+  "soundstart": Event;
+  "speechend": Event;
+  "speechstart": Event;
+  "start": Event;
+}
+
 interface SpeechRecognition extends EventTarget {
-  grammars: any;
+  grammars: SpeechGrammarList;
   lang: string;
   continuous: boolean;
   interimResults: boolean;
@@ -37,23 +69,26 @@ interface SpeechRecognition extends EventTarget {
   removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
 }
 
-interface SpeechRecognitionEventMap {
-  "audioend": Event;
-  "audiostart": Event;
-  "end": Event;
-  "error": SpeechRecognitionErrorEvent;
-  "nomatch": SpeechRecognitionEvent;
-  "result": SpeechRecognitionEvent;
-  "soundend": Event;
-  "soundstart": Event;
-  "speechend": Event;
-  "speechstart": Event;
-  "start": Event;
+interface SpeechGrammarList {
+  length: number;
+  item(index: number): SpeechGrammar;
+  addFromURI(src: string, weight?: number): void;
+  addFromString(string: string, weight?: number): void;
+  [index: number]: SpeechGrammar;
+}
+
+interface SpeechGrammar {
+  src: string;
+  weight: number;
 }
 
 interface Window {
   SpeechRecognition: typeof SpeechRecognition;
   webkitSpeechRecognition: typeof SpeechRecognition;
+  aistudio?: {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  };
 }
 
 declare module '@convai/web-sdk' {
@@ -62,10 +97,23 @@ declare module '@convai/web-sdk' {
     onResponse(callback: (response: any) => void): void;
     onAudio(callback: (audio: any) => void): void;
     onError(callback: (error: any) => void): void;
+    onBlendshapes(callback: (blendshapes: any) => void): void;
+    onStateChange(callback: (state: any) => void): void;
     sendTextChunk(text: string): void;
     startAudioChunk(): void;
     endAudioChunk(): void;
     reset(): void;
+    connect(): Promise<void>;
+    disconnect(): Promise<void>;
+    audioControls: {
+      enableAudio: () => Promise<void>;
+      disableAudio: () => Promise<void>;
+      muteAudio: () => Promise<void>;
+      unmuteAudio: () => Promise<void>;
+    };
+    state: {
+      isConnected: boolean;
+    };
     [key: string]: any;
   }
 }
